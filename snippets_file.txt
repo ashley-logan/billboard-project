@@ -1,0 +1,12 @@
++------------------------+-------------------------------+-------------------------------+
+|        Aspect          |            List               |       Generator / Iterator     |
++------------------------+-------------------------------+-------------------------------+
+| Memory Usage           | High (stores all values)      | Low (one value at a time)      |
+| Access Pattern         | Random & multiple passes      | One-time, sequential only      |
+| Evaluation             | Eager (all computed at once)  | Lazy (computed on demand)      |
+| Reusability            | Reusable                      | Not reusable                   |
+| Speed (small data)     | Often faster                  | Slightly slower                |
+| Speed (large data)     | May crash or be slow          | Scales efficiently             |
+| Suitability for        | Small/medium datasets         | Streaming, big data, pipelines |
+| Use in Pandas          | Fully supported               | Must convert to list first     |
++------------------------+-------------------------------+-------------------------------+
