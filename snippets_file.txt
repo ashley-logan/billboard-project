@@ -10,3 +10,17 @@
 | Suitability for        | Small/medium datasets         | Streaming, big data, pipelines |
 | Use in Pandas          | Fully supported               | Must convert to list first     |
 +------------------------+-------------------------------+-------------------------------+
+
+VSCodium Snippets Template JSON
+{
+  "Function with Defaults": {
+    "prefix": "fdef",
+    "body": [
+      "def ${1:my_function}(${2:arg}):",
+      "    ${3:pass}",
+      "",
+      "$0"
+    ],
+    "description": "Python function with default placeholder names"
+  }
+}
