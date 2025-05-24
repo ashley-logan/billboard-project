@@ -110,12 +110,16 @@ def offload_parser(parser, chunk, handler, events_iter):
         handler(event, ele)
 
 
-def add_index(date, data):
-    indexed_data = []
+def format_index(date, data):
+    indexed_ = []
     idxs = [1, 2, 5]
+    columns = ["date", "position", "song", "artist", "wks_on_chart"]
     for position, entry in enumerate(data, start=1):
-        indexed_data.append([date, position] + [entry[i] for i in idxs])
-    return indexed_data
+        indexed_.append([date, position] + [entry[i] for i in idxs])
+
+    formatted_indexed = [dict(zip(columns, entry)) for entry in indexed_]
+    
+    return formatted_indexed
 
 
 def format_data(data_):
@@ -162,9 +166,9 @@ async def main():
         if task.exception():
             raise "task failed"
         date, data = task.result()
-        indexed_data = add_index(date, data)
-        formatted_data = format_data(indexed_data)
-        buffer.extend(formatted_data)
+        transformed_data = format_index_index(date, data)
+        # formatted_data = format_data(indexed_data)
+        buffer.extend(transformed_data)
     
         if len(buffer) >= BUFFER_SIZE:
             df = pd.DataFrame.from_records(buffer)
