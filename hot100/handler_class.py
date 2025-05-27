@@ -94,3 +94,6 @@ class ThrottledClient(httpx_retry.RetryClient):
     def set_params(self, attr, **kwargs):
         setattr(self, attr, self.attrs[attr](**kwargs[attr]))
         return attr
+
+
+class CustomPullParser:
