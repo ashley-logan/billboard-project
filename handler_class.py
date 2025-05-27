@@ -1,4 +1,6 @@
-
+import httpx
+import httpx_retry
+import certifi
 
 
 class HTMLHandler:
@@ -19,7 +21,6 @@ class HTMLHandler:
             if ele.tag == TAG and CLASS_ in ele.attrib.get("class", ""):
                 return True
         return False
-
 
     def is_target(self, ele):
         return ele.tag in self.CHILD_TAGS
@@ -68,3 +69,28 @@ class HTMLHandler:
         for i, row in enumerate(self.content):
             output += f"row {i}: {row}\n"
         return output
+
+
+class ThrottledClient(httpx_retry.RetryClient):
+    def __init__(self, **kwargs):
+        for attr in ["timeout", "retry_strategy", "client"]:
+            assert attr in kwargs
+
+        self.attrs = {
+            "timeout": httpx.Timeout,
+            "retry_strategy": httpx_retry.RetryStrategy,
+            "client": httpx.AsyncClient,
+        }
+
+        self.set_params("timeout", **kwargs)
+        self.set_params("retry_strategy", **kwargs)
+        self.set_params("client", **kwargs)
+        kwargs["client"]["timeout"] = self.timeout
+
+        client = self.set_params("client", **kwargs)
+
+        super().__init__(client=client, retry_strategy=retry_strategy)
+
+    def set_params(self, attr, **kwargs):
+        setattr(self, attr, self.attrs[attr](**kwargs[attr]))
+        return attr
