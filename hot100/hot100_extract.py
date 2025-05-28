@@ -11,25 +11,6 @@ from handler_class import HTMLHandler, ThrottledClient
 
 OLDEST = dt.datetime(1958, 8, 4)
 
-httpx_stream_config = {
-    "timeout": {
-        "connect": 5.0,
-        "read": 10.0,
-        "pool": 10.0,
-    },
-    "retry_strategy": {
-        "max_attempts": 3,
-        "backoff_factor": 0.25,
-        "statuses": {502, 503, 504, 429},
-        "methods": {"GET"},
-        "retry_exceptions": True,
-    },
-    "client": {
-        "base_url": "https://www.billboard.com/charts/hot-100/",
-        "verify": certifi.where(),
-    },
-}
-
 
 class HTMLTarget(HTMLHandler):
     PARENT_TAGS = ["ul"]  # parent tag that contains all relevant nodes
@@ -64,20 +45,11 @@ def date_generator(date=dt.datetime.today(), delta=1):
         curr -= dt.timedelta(weeks=delta)
 
 
-def events_generator(
-    parser, handler, max_len=100
-) -> Generator[tuple[str, etree.Element], None, None]:
-    events = parser.read_events()
-    for event, ele in events:
-        if len(handler) >= max_len:
-            break
-        yield event, ele
 
-
-async def clean_data(input_queue) -> list[dict[str, Any]]:
+async def clean_data(queue, **kwargs) -> list[dict[str, Any]]:
     output = []
     while True:
-        raw_data = await input_queue.get()
+        raw_data = await queue.get()
         if raw_data is None:
             break
         clean_data = await clean(raw_data)
@@ -98,65 +70,49 @@ async def clean(page) -> list[dict[str, Any]]:
     return clean_data
 
 
-async def scrape_data(time_, generator, output_queue):
+async def scrape_data(dates, queue, stream_client, semaphore, **kwargs):
     retry_client = ThrottledClient(**httpx_stream_config)
     async with (
-        retry_client,
-        asyncio.Semaphore(10),
+        stream_client,
+        semaphore,
         asyncio.TaskGroup() as tg,
     ):
-        for date in generator:
+        for date in dates:
             config = {
                 "client": retry_client,
                 "parser": etree.HTMLPullParser(events=("start", "end")),
                 "handler": HTMLTarget(),
                 "output_queue": output_queue,
             }
-            tg.create_task(html_driver(time_, date, **config))
+            tg.create_task(html_driver(date, queue, **kwargs))
 
     await output_queue.put(None)
 
 
 # testing parser feed() and read_events() methods
-async def html_driver(time_, date, client, parser, handler, output_queue):
+async def html_driver(date, queue, stream_client, parser, parser_config, **kwargs):
     url = date.strftime("%Y-%m-%d") + "/"
+    targeted_parser = parser(**parser_config)
     await asyncio.sleep(0.2)
-    async with client.stream("GET", url) as response:
+    async with stream_client.stream("GET", url) as response:
         async for chunk in response.aiter_text():
-            events_ = events_generator(parser, handler)
-            parser.feed(chunk)
-            for event, ele in events_:
-                handler(event, ele)
-            if len(handler) >= 100:
+            # events_ = events_generator(parser, handler)
+            targeted_parser.feed(chunk)
+            if targeted_parser.at_quota:
                 break
-    content = handler.get_content()
+    data = targeted_parser.get_data()
     #
-    await output_queue.put((date, content))
+    await queue.put((date, data))
 
 
-# async def timer():
-#     start = time.time()
-#     while True:
-#         await asyncio.sleep(30)
-#         print(f"{time.time() - start} seconds")
-
-
-# @timing_decorator
-async def main():
+async def extract(**kwargs):
     start = time.time()
-    queue1 = asyncio.Queue()
     dates = date_generator()
-    # timer_task = asyncio.create_task(timer())
 
     async with asyncio.TaskGroup() as tg:
-        # logging.info(
-        #     "initalized TaskGroup",
-        #     extra={"second": time.time() - start, "variable": None},
-        # )
-        tg.create_task(scrape_data(time_=start, generator=dates, output_queue=queue1))
-        clean_task = tg.create_task(clean_data(input_queue=queue1))
+        tg.create_task(scrape_data(dates, **kwargs))
+        clean_task = tg.create_task(clean_data(**kwargs))
 
-    # timer_task.cancel()
     data = clean_task.result()
     df = pd.DataFrame.from_records(data)
     df.to_parquet("hot100.parquet", engine="fastparquet")
@@ -164,4 +120,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(extract())
