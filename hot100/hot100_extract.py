@@ -2,7 +2,6 @@ import asyncio
 import datetime as dt
 import time
 import json
-import logging
 from typing import Generator
 from pathlib import Path
 from client_class import ThrottledClient
@@ -10,9 +9,6 @@ from parser_class import HTMLTargetParser
 
 
 OLDEST = dt.datetime(1958, 8, 4)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def normalize_to_sat(func):
@@ -53,14 +49,14 @@ async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
         clean_data = await clean(raw_data)
         resulting_data.extend(clean_data)
         i += 1
-        logger.info(f"cleaned data batch {i} in worker {num}")
+        print(f"cleaned data batch {i} in worker {num}")
     return resulting_data
 
 
 async def clean(
     raw_data: list[list[str]],
 ) -> list[dict[int, str]]:
-    idxs = [0, 1, 2, 5]
+    idxs = [0, 2, 5]
     col_names = ["position", "date", "song", "artist", "wks_on_chart"]
     clean_data = []
     for position, entry in enumerate(raw_data, start=1):
@@ -89,7 +85,7 @@ async def scrape_worker(
             raw_data = await html_driver(date, tail_url, client, parser_kwargs)
         await queue2.put(raw_data)
         i += 1
-        logger.info(f"succesfully queued raw data {i} in worker {num}")
+        print(f"succesfully queued raw data {i} in worker {num}")
     await queue2.put(None)
 
 
@@ -104,7 +100,7 @@ async def html_driver(
             if parser.at_quota:
                 break
     data = parser.get_data()
-    logger.info(f"parsed data from {date.date().isoformat()}")
+    print(f"parsed data from {date.date().isoformat()}")
     return [[date.date().isoformat()] + row for row in data]
 
 
@@ -127,7 +123,7 @@ def dump_json(data: list[list]):
 
     with filepath.open("w") as f:
         json.dump(data, f, indent=2)
-    logger.info(f"wrote json file to {filepath}")
+    print(f"wrote json file to {filepath}")
 
 
 async def extract(
@@ -150,7 +146,7 @@ async def extract(
             batches.append(tg.create_task(clean_worker(i, queue2)))
 
     dump_json([row for batch in batches for row in batch.result()])
-    logger.info(f"script finished in {time.time() - start} seconds")
+    print(f"script finished in {time.time() - start} seconds")
 
 
 if __name__ == "__main__":
