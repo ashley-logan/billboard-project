@@ -56,14 +56,14 @@ async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
 async def clean(
     raw_data: list[list[str]],
 ) -> list[dict[int, str]]:
-    idxs = [0, 2, 5]
+    idxs = [0, 2, 3, 6]
     col_names = ["position", "date", "song", "artist", "wks_on_chart"]
     clean_data = []
     for position, entry in enumerate(raw_data, start=1):
         row_ = [position] + [entry[i] for i in idxs]
         row_ = {col: data for col, data in zip(col_names, row_)}
         clean_data.append(row_)
-
+    print(clean_data)
     return clean_data
 
 
@@ -122,7 +122,7 @@ def dump_json(data: list[list]):
     output_folder.mkdir(exist_ok=True)
 
     with filepath.open("w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f)
     print(f"wrote json file to {filepath}")
 
 
