@@ -6,15 +6,14 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "asyncio>=3.4.3",
-    "certifi>=2025.4.26",
     "datetime>=5.5",
     "fastparquet>=2024.11.0",
     "httpx>=0.28.1",
-    "httpx-retry>=2025.4.23",
+    "httpx-retries>=0.4.0",
     "lxml>=5.4.0",
     "matplotlib>=3.10.3",
     "numpy>=2.2.6",
     "pandas>=2.2.3",
-    "pyarrow>=20.0.0",
+    "pathlib>=1.0.1",
     "typing>=3.10.0.0",
 ]

@@ -1,56 +1,51 @@
-import httpx
-import certifi
 import asyncio
-import datetime as dt
-import time
-import pandas as pd
-from lxml import etree, HTMLPullParser
+import hot100_extract
 
-httpx_stream_config = {
-    "timeout": {
+throttled_client_config = {
+    "timeout_config": {
         "connect": 5.0,
+        "write": 5.0,
         "read": 10.0,
         "pool": 10.0,
     },
-    "retry_strategy": {
-        "max_attempts": 3,
+    "retry_config": {
+        "total": 3,
+        "max_backoff_wait": 15.0,
         "backoff_factor": 0.25,
-        "statuses": {502, 503, 504, 429},
-        "methods": {"GET"},
-        "retry_exceptions": True,
+        "allowed_methods": ["GET"],
     },
-    "client": {
+    "client_config": {
         "base_url": "https://www.billboard.com/charts/hot-100/",
-        "verify": certifi.where(),
     },
 }
 
 parser_config = {
     "num_scrapes": 100,
-    "events": ("start", "end",),
+    "events": (
+        "start",
+        "end",
+    ),
     "parent_ele": {
         "tag": "ul",
         "class_": "o-chart-results-list-row //",
     },
-    "target_eles": {
-        "tags": ["h3", "span"]
-    },
+    "target_eles": {"tags": ["h3", "span"]},
     "parser_ignore": [
-        "NEW", "RE-\nENTRY",
-    ]
+        "NEW",
+        "RE-\nENTRY",
+    ],
 }
 
 
-def main():
+async def main():
     print("Hello from hot100-project!")
-    instances = {
-        "queue": asyncio.Queue(),
-        "stream_client": ThrottledClient(**httpx_stream_config),
+    extract_config = {
+        "client_config": throttled_client_config,
         "semaphore": asyncio.Semaphore(15),
-        "parser": HTMLTargetParser,
         "parser_config": parser_config,
     }
-    asyncio.run(extract())
+    await hot100_extract.extract(**extract_config)
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

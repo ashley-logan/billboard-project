@@ -1,22 +1,18 @@
-import httpx
-import certifi
 import asyncio
 import datetime as dt
 import time
-import pandas as pd
-from lxml import etree
-from typing import Any, Generator
-from handler_class import HTMLHandler, ThrottledClient
+import json
+import logging
+from typing import Generator
+from pathlib import Path
+from client_class import ThrottledClient
+from parser_class import HTMLTargetParser
 
 
 OLDEST = dt.datetime(1958, 8, 4)
 
-
-class HTMLTarget(HTMLHandler):
-    PARENT_TAGS = ["ul"]  # parent tag that contains all relevant nodes
-    CHILD_TAGS = ["span", "h3"]  # tags within parent node that contain relevant data
-    PARENT_CLASSES = ["o-chart-results-list-row //"]  # beginning of the parent class
-    TEXT_IGNORE = ["NEW", "RE-\nENTRY"]
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def normalize_to_sat(func):
@@ -24,7 +20,7 @@ def normalize_to_sat(func):
         if not args and not kwargs:
             date = dt.datetime.today()
         else:
-            date = kwargs.get("latest_date") if "latest_date" in kwargs else args[0]
+            date = kwargs.get("date") if "date" in kwargs else args[0]
 
         if not isinstance(date, dt.datetime):
             raise TypeError(f"Expected datetime object, got {type(date).__name__}")
@@ -37,7 +33,9 @@ def normalize_to_sat(func):
 
 
 @normalize_to_sat
-def date_generator(date=dt.datetime.today(), delta=1):
+def date_generator(
+    date: dt.datetime = dt.datetime.today(), delta: int = 1
+) -> Generator[dt.datetime, None, None]:
     # infintite generator for dates that takes the timedelta as a paramater
     curr = date
     while curr >= OLDEST:
@@ -45,78 +43,114 @@ def date_generator(date=dt.datetime.today(), delta=1):
         curr -= dt.timedelta(weeks=delta)
 
 
-
-async def clean_data(queue, **kwargs) -> list[dict[str, Any]]:
-    output = []
+async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
+    i = 0
+    resulting_data = []
     while True:
-        raw_data = await queue.get()
+        raw_data = await queue2.get()
         if raw_data is None:
             break
         clean_data = await clean(raw_data)
-        output.extend(clean_data)
-    return output
+        resulting_data.extend(clean_data)
+        i += 1
+        logger.info(f"cleaned data batch {i} in worker {num}")
+    return resulting_data
 
 
-async def clean(page) -> list[dict[str, Any]]:
-    idxs = [1, 2, 5]
-    col_names = ["date", "position", "song", "artist", "wks_on_chart"]
-    date, raw_data = page
+async def clean(
+    raw_data: list[list[str]],
+) -> list[dict[int, str]]:
+    idxs = [0, 1, 2, 5]
+    col_names = ["position", "date", "song", "artist", "wks_on_chart"]
     clean_data = []
     for position, entry in enumerate(raw_data, start=1):
-        row_ = [date, position] + [entry[i] for i in idxs]
+        row_ = [position] + [entry[i] for i in idxs]
         row_ = {col: data for col, data in zip(col_names, row_)}
         clean_data.append(row_)
 
     return clean_data
 
 
-async def scrape_data(dates, queue, stream_client, semaphore, **kwargs):
-    retry_client = ThrottledClient(**httpx_stream_config)
-    async with (
-        stream_client,
-        semaphore,
-        asyncio.TaskGroup() as tg,
-    ):
-        for date in dates:
-            config = {
-                "client": retry_client,
-                "parser": etree.HTMLPullParser(events=("start", "end")),
-                "handler": HTMLTarget(),
-                "output_queue": output_queue,
-            }
-            tg.create_task(html_driver(date, queue, **kwargs))
-
-    await output_queue.put(None)
+async def scrape_worker(
+    num: int,
+    queue1: asyncio.Queue,
+    queue2: asyncio.Queue,
+    client: ThrottledClient,
+    semaphore: asyncio.Semaphore,
+    parser_kwargs: dict,
+):
+    i = 0
+    while True:
+        item = await queue1.get()
+        if item is None:
+            break
+        date, tail_url = item
+        async with semaphore:
+            raw_data = await html_driver(date, tail_url, client, parser_kwargs)
+        await queue2.put(raw_data)
+        i += 1
+        logger.info(f"succesfully queued raw data {i} in worker {num}")
+    await queue2.put(None)
 
 
 # testing parser feed() and read_events() methods
-async def html_driver(date, queue, stream_client, parser, parser_config, **kwargs):
-    url = date.strftime("%Y-%m-%d") + "/"
-    targeted_parser = parser(**parser_config)
-    await asyncio.sleep(0.2)
-    async with stream_client.stream("GET", url) as response:
+async def html_driver(
+    date: dt.datetime, tail_url: str, client: ThrottledClient, parser_config: dict
+) -> list[list[str]]:
+    parser = HTMLTargetParser(parser_config)
+    async with client.stream("GET", tail_url) as response:
         async for chunk in response.aiter_text():
-            # events_ = events_generator(parser, handler)
-            targeted_parser.feed(chunk)
-            if targeted_parser.at_quota:
+            parser.feed(chunk)
+            if parser.at_quota:
                 break
-    data = targeted_parser.get_data()
-    #
-    await queue.put((date, data))
+    data = parser.get_data()
+    logger.info(f"parsed data from {date.date().isoformat()}")
+    return [[date.date().isoformat()] + row for row in data]
 
 
-async def extract(**kwargs):
+async def url_producer(dates: Generator, queue1: asyncio.Queue):
+    for date in dates:
+        tail_url = f"{date.strftime('%Y-%m-%d')}/"
+        await queue1.put((date, tail_url))
+    for _ in range(10):
+        await queue1.put(None)
+
+
+def dump_json(data: list[list]):
+    curr_dir = Path.cwd()
+    output_folder = curr_dir / "hot100" / "hot100_datafiles"
+    timestamp = dt.datetime.now()
+    date = timestamp.strftime("%m-%d_%H-%M")
+    filename = f"records{date}.json"
+    filepath = output_folder / filename
+    output_folder.mkdir(exist_ok=True)
+
+    with filepath.open("w") as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"wrote json file to {filepath}")
+
+
+async def extract(
+    client_config: dict, semaphore: asyncio.Semaphore, parser_config: dict
+):
     start = time.time()
+    queue1 = asyncio.Queue(maxsize=15)
+    queue2 = asyncio.Queue()
     dates = date_generator()
-
+    client = ThrottledClient(**client_config)
+    batches = []
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(scrape_data(dates, **kwargs))
-        clean_task = tg.create_task(clean_data(**kwargs))
+        tg.create_task(url_producer(dates, queue1))
+        for i in range(10):
+            tg.create_task(
+                scrape_worker(i, queue1, queue2, client, semaphore, parser_config)
+            )
 
-    data = clean_task.result()
-    df = pd.DataFrame.from_records(data)
-    df.to_parquet("hot100.parquet", engine="fastparquet")
-    print(len(df))
+        for i in range(10):
+            batches.append(tg.create_task(clean_worker(i, queue2)))
+
+    dump_json([row for batch in batches for row in batch.result()])
+    logger.info(f"script finished in {time.time() - start} seconds")
 
 
 if __name__ == "__main__":
