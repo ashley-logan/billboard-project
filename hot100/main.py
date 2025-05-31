@@ -38,7 +38,6 @@ parser_config = {
 
 
 async def main():
-    print("Hello from hot100-project!")
     extract_config = {
         "client_config": throttled_client_config,
         "semaphore": asyncio.Semaphore(15),
