@@ -67,16 +67,27 @@ def get_query(df):
 
 
 def split_col(df):
+    feature_col = pl.col("artist").str.split("Featuring")
+    artists_col = feature_col.list.first().str.split("&")
     df = df.with_columns(
-        artist=pl.col("artist").str.split("Featuring").list.first(),
-        feature=pl.col("artist")
-        .str.split("Featuring")
-        .list.get(index=1, null_on_oob=True),
-    )
-    df = df.with_columns(
-        artist1=pl.col("artist").str.split("&").list.first(),
-        artist2=pl.col("artist").str.split("&").list.get(index=1, null_on_oob=True),
-        artist3=pl.col("artist").str.split("&").list.get(index=2, null_on_oob=True),
+        date=pl.col("date").cast(pl.Date),
+        position=pl.col("position").cast(pl.UInt8),
+        record_id=pl.arange(0, pl.len()).sort(descending=True),
+        artist1=artists_col.list.first(),
+        artist2=artists_col.list.get(index=1, null_on_oob=True),
+        artist3=artists_col.list.get(index=2, null_on_oob=True),
+        feature=feature_col.list.get(index=1, null_on_oob=True),
+    ).select(
+        [
+            "record_id",
+            "date",
+            "position",
+            "song",
+            "artist1",
+            "artist2",
+            "artist3",
+            "feature",
+        ]
     )
 
     return df
@@ -87,15 +98,15 @@ def clean(df):
         pl.col("date").cast(pl.Date),
         pl.arange(0, pl.len()).sort(descending=True).alias("record_id"),
     )
-    df = split_col(df)
+    df = df.pipe(split_col)
     return df
 
 
 def transform():
     filepath = "./data/records05-29_23-57.json"
-    df: pl.DataFrame = pl.read_json(filepath).drop("wks_on_chart")
-    cleandf = clean(df)
-    print(cleandf)
+    df: pl.DataFrame = pl.read_json(filepath)
+    df = df.pipe(split_col)
+    print(df)
 
 
 if __name__ == "__main__":
