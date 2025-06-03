@@ -4,6 +4,8 @@ from numpy import log
 from pathlib import Path
 import re
 
+pl.Config.set_tbl_cols(20)
+
 """
 TRANFORMATION OUTLINE:
 convert ["date"] to dtype pl.Date
@@ -33,80 +35,121 @@ groupby ["song"]
 #     )
 
 
-def create_song_table(df):
-    songdf = (
-        df.group_by("song")
-        .agg(
-            (1 / pl.col("position")).sum().alias("peak_popularity_score"),
-            (1 / (log(10 * pl.col("position")))).sum().alias("staying_power_score"),
-            pl.len().alias("wks_on_chart"),
-            pl.col("artist").mode().first(),
-        )
-        .select(
-            pl.col("peak_popularity_score").rank(descending=True).name.suffix("_rank"),
-            pl.col("staying_power_score").rank(descending=True).name.suffix("_rank"),
-        )
+# def create_song_table(df):
+#     songdf = (
+#         df.group_by("song")
+#         .agg(
+#             (1 / pl.col("position")).sum().alias("peak_popularity_score"),
+#             (1 / (log(pl.col("position")))).sum().alias()
+#             pl.len().alias("wks_on_chart"),
+#             pl.col("artist").mode().first(),
+#         )
+#         .select(
+#             pl.col("peak_popularity_score").rank(descending=True).name.suffix("_rank"),
+#             pl.col("staying_power_score").rank(descending=True).name.suffix("_rank"),
+#         )
+#         .with_columns(
+#             ((pl.len() + 1 - pl.col("peak_popularity_score_rank")) / (pl.len() + 1))
+#             .mul(100)
+#             .alias("peak_pct")
+#         )
+#     )
+# return songdf
+def get_zscore(col):
+    return (pl.col(col) - pl.col(col).std()) / pl.col(col).mean()
+
+
+def join_on(df1, df2, col):
+    return df1.join(df2, on=col, how="inner")
+
+
+def avg_pct(df):
+    power_pct = pl.col("power_score").rank(method="ordinal") / pl.len()
+    longevity_pct = pl.col("longevity_score").rank(method="ordinal") / pl.len()
+    return (100 * (power_pct + longevity_pct) / 2).round(2)
+
+
+def get_pct(df):
+    q = (
+        df.lazy()
         .with_columns(
-            ((pl.len() + 1 - pl.col("peak_popularity_score_rank")) / (pl.len() + 1))
-            .mul(100)
-            .alias("peak_pct")
+            track_id=pl.arange(0, pl.len()).sort(descending=True),
+            average_percentile=df.pipe(avg_pct),
+        )
+        .sort(by="average_percentile", descending=True)
+        .select(
+            [
+                "track_id",
+                "song",
+                "artists",
+                "features",
+                "power_score",
+                "longevity_score",
+                "average_percentile",
+                "proportion_top10",
+                "weeks_on_chart",
+            ]
         )
     )
+    songdf = q.collect()
     return songdf
 
 
 def get_query(df):
-    q = (
+    df = (
         df.lazy()
-        .group_by(pl.col("song"))
+        .group_by(["song", "artists", "features"])
         .agg(
-            (1 / pl.col("position")).sum().alias("popularity_score"),
-            pl.len().alias("wks_on_chart"),
+            (1 / pl.col("position")).sum().alias("power_score"),
+            (1 / (log(pl.col("position").mul(10)))).sum().alias("longevity_score"),
+            pl.len().alias("weeks_on_chart"),
+            ((pl.col("position") <= 10).sum() / pl.len())
+            .round(4)
+            .alias("proportion_top10"),
         )
-    )
+    ).collect()
+    return df
 
 
 def split_col(df):
-    feature_col = pl.col("artist").str.split("Featuring")
-    artists_col = feature_col.list.first().str.split("&")
-    df = df.with_columns(
-        date=pl.col("date").cast(pl.Date),
-        position=pl.col("position").cast(pl.UInt8),
-        record_id=pl.arange(0, pl.len()).sort(descending=True),
-        artist1=artists_col.list.first(),
-        artist2=artists_col.list.get(index=1, null_on_oob=True),
-        artist3=artists_col.list.get(index=2, null_on_oob=True),
-        feature=feature_col.list.get(index=1, null_on_oob=True),
-    ).select(
-        [
-            "record_id",
-            "date",
-            "position",
-            "song",
-            "artist1",
-            "artist2",
-            "artist3",
-            "feature",
-        ]
+    q_plan = (
+        df.lazy()
+        .with_columns(
+            date=pl.col("date").cast(pl.Date),
+            position=pl.col("position").cast(pl.UInt8),
+            record_id=pl.arange(0, pl.len()).sort(descending=True),
+            artists=pl.col("artist").str.split("Featuring").list.first().str.split("&"),
+            features=pl.col("artist")
+            .str.split("Featuring")
+            .list.get(index=1, null_on_oob=True)
+            .str.split("&"),
+        )
+        .select(
+            [
+                "record_id",
+                "date",
+                "position",
+                "song",
+                "artists",
+                "features",
+            ]
+        )
     )
 
-    return df
-
-
-def clean(df):
-    df = df.with_columns(
-        pl.col("date").cast(pl.Date),
-        pl.arange(0, pl.len()).sort(descending=True).alias("record_id"),
-    )
-    df = df.pipe(split_col)
-    return df
+    return q_plan.collect()
 
 
 def transform():
     filepath = "./data/records05-29_23-57.json"
     df: pl.DataFrame = pl.read_json(filepath)
-    df = df.pipe(split_col)
-    print(df)
+    maindf = df.pipe(split_col)
+    trackdf = maindf.pipe(get_query)
+    trackdf = trackdf.pipe(get_pct)
+    maindf = maindf.pipe(join_on, trackdf.select(["track_id", "song"]), "song").select(
+        ["record_id", "date", "position", "track_id", "song", "artists", "features"]
+    )
+    print(maindf.head())
+    print(trackdf.head())
 
 
 if __name__ == "__main__":
