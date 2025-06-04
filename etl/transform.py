@@ -2,7 +2,7 @@ import json
 import polars as pl
 from numpy import log
 from pathlib import Path
-import re
+import graphviz
 
 pl.Config.set_tbl_cols(20)
 
@@ -63,18 +63,22 @@ def join_on(df1, df2, col):
     return df1.join(df2, on=col, how="inner")
 
 
-def avg_pct(df):
-    power_pct = pl.col("power_score").rank(method="ordinal") / pl.len()
-    longevity_pct = pl.col("longevity_score").rank(method="ordinal") / pl.len()
+def avg_pct_expr() -> pl.Expr:
+    power_pct: pl.Expr = pl.col("power_score").rank(method="ordinal") / pl.len().cast(
+        pl.Float64
+    )
+    longevity_pct: pl.Expr = pl.col("longevity_score").rank(
+        method="ordinal"
+    ) / pl.len().cast(pl.Float64)
     return (100 * (power_pct + longevity_pct) / 2).round(2)
 
 
 def get_pct(df):
-    q = (
+    q: pl.LazyFrame = (
         df.lazy()
         .with_columns(
             track_id=pl.arange(0, pl.len()).sort(descending=True),
-            average_percentile=df.pipe(avg_pct),
+            average_percentile=avg_pct_expr(),
         )
         .sort(by="average_percentile", descending=True)
         .select(
@@ -91,12 +95,11 @@ def get_pct(df):
             ]
         )
     )
-    songdf = q.collect()
-    return songdf
+    return q
 
 
 def get_query(df):
-    df = (
+    df: pl.LazyFrame = (
         df.lazy()
         .group_by(["song", "artists", "features"])
         .agg(
@@ -107,12 +110,12 @@ def get_query(df):
             .round(4)
             .alias("proportion_top10"),
         )
-    ).collect()
+    )
     return df
 
 
 def split_col(df):
-    q_plan = (
+    q_plan: pl.LazyFrame = (
         df.lazy()
         .with_columns(
             date=pl.col("date").cast(pl.Date),
@@ -136,12 +139,12 @@ def split_col(df):
         )
     )
 
-    return q_plan.collect()
+    return q_plan
 
 
 def transform():
-    filepath = "./data/records05-29_23-57.json"
-    df: pl.DataFrame = pl.read_json(filepath)
+    filepath: str = "./data/records05-29_23-57.json"
+    lf: pl.LazyFrame = pl.read_json(filepath).lazy()
     maindf = df.pipe(split_col)
     trackdf = maindf.pipe(get_query)
     trackdf = trackdf.pipe(get_pct)

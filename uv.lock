@@ -251,6 +251,15 @@ wheels = [
 ]
 
 [[package]]
+name = "graphviz"
+version = "0.20.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/83/5a40d19b8347f017e417710907f824915fba411a9befd092e52746b63e9f/graphviz-0.20.3.zip", hash = "sha256:09d6bc81e6a9fa392e7ba52135a9d49f1ed62526f96499325930e87ca1b5925d", size = 256455, upload-time = "2024-03-21T07:50:45.772Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/be/d59db2d1d52697c6adc9eacaf50e8965b6345cc143f671e1ed068818d5cf/graphviz-0.20.3-py3-none-any.whl", hash = "sha256:81f848f2904515d8cd359cc611faba817598d2feaac4027b266aa3eda7b3dde5", size = 47126, upload-time = "2024-03-21T07:50:43.091Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -267,6 +276,7 @@ dependencies = [
     { name = "asyncio" },
     { name = "datetime" },
     { name = "fastparquet" },
+    { name = "graphviz" },
     { name = "httpx" },
     { name = "httpx-retries" },
     { name = "ipykernel" },
@@ -284,6 +294,7 @@ requires-dist = [
     { name = "asyncio", specifier = ">=3.4.3" },
     { name = "datetime", specifier = ">=5.5" },
     { name = "fastparquet", specifier = ">=2024.11.0" },
+    { name = "graphviz", specifier = ">=0.20.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx-retries", specifier = ">=0.4.0" },
     { name = "ipykernel", specifier = ">=6.29.5" },

@@ -8,6 +8,7 @@ dependencies = [
     "asyncio>=3.4.3",
     "datetime>=5.5",
     "fastparquet>=2024.11.0",
+    "graphviz>=0.20.3",
     "httpx>=0.28.1",
     "httpx-retries>=0.4.0",
     "ipykernel>=6.29.5",
