@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "adbc-driver-sqlite>=1.6.0",
     "asyncio>=3.4.3",
     "datetime>=5.5",
     "fastparquet>=2024.11.0",
@@ -18,5 +19,6 @@ dependencies = [
     "pandas>=2.2.3",
     "pathlib>=1.0.1",
     "polars>=1.30.0",
+    "pyarrow>=20.0.0",
     "typing>=3.10.0.0",
 ]
