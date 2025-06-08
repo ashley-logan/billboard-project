@@ -87,7 +87,18 @@ def create_table_song(lf):
             )
         )
         .sort(by="power", descending=True)
-        .select(["id", "song", "power", "longevity", "earliest", "latest", "decade"])
+        .select(
+            [
+                "id",
+                "song",
+                "artist",
+                "power",
+                "longevity",
+                "earliest",
+                "latest",
+                "decade",
+            ]
+        )
         .collect()
     )
 
@@ -100,22 +111,34 @@ def art_expansion_expr(col):
         .str.split(" With ")
         .list.eval(
             pl.element()
-            .str.split("&")
+            .str.strip_chars()
+            .str.split(" &")
             .list.eval(
-                pl.element().str.split(",").list.eval(pl.element().str.split("X"))
+                pl.element()
+                .str.strip_chars()
+                .str.split(", ")
+                .list.eval(pl.element().str.strip_chars().str.split(" X "))
             )
         )
     )
 
 
-def create_table_junction(lf, song_table) -> pl.DataFrame:
+def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
     return (
         lf.unique(subset=["song", "artist"])
-        .select(song=pl.col("song"), artist=art_expansion_expr("artist"))
+        .join(song_table.lazy(), on=["song", "artist"], how="inner")
+        .select(
+            song_id=pl.col("id"),
+            song=pl.col("song"),
+            artist=art_expansion_expr("artist"),
+        )
         .explode(["artist"])
         .explode(["artist"])
         .explode(["artist"])
         .explode(["artist"])
+        .join(artist_table.lazy(), on="artist", how="inner")
+        .rename({"id": "artist_id"})
+        .select(["song_id", "song", "artist_id", "artist"])
         .collect()
     )
 
@@ -140,8 +163,9 @@ def main():
     base_table = base_table.pipe(clean)
     song_table = create_table_song(base_table.lazy())
     artist_table = create_table_artist(base_table.lazy())
-    print(artist_table.tail(100))
-    # print(song_table.tail(20))
+    junction_table = create_table_junction(base_table.lazy(), song_table, artist_table)
+    print(junction_table.head(20))
+    print(song_table.head(20))
 
 
 if __name__ == "__main__":
