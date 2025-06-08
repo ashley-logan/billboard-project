@@ -5,7 +5,7 @@ import pyarrow
 import sqlite3
 
 pl.Config.set_tbl_cols(20)
-pl.Config.set_tbl_rows(20)
+pl.Config.set_tbl_rows(100)
 con = sql_driver.connect("./etl/billboard.db")
 """
 TRANFORMATION OUTLINE:
@@ -98,7 +98,13 @@ def art_expansion_expr(col):
         .str.split(" Featuring ")
         .list.first()
         .str.split(" With ")
-        .list.eval(pl.element().str.split("&").list.eval(pl.element().str.split(",")))
+        .list.eval(
+            pl.element()
+            .str.split("&")
+            .list.eval(
+                pl.element().str.split(",").list.eval(pl.element().str.split("X"))
+            )
+        )
     )
 
 
@@ -109,6 +115,7 @@ def create_table_junction(lf, song_table) -> pl.DataFrame:
         .explode(["artist"])
         .explode(["artist"])
         .explode(["artist"])
+        .explode(["artist"])
         .collect()
     )
 
@@ -116,7 +123,12 @@ def create_table_junction(lf, song_table) -> pl.DataFrame:
 def create_table_artist(lf) -> pl.DataFrame:
     return (
         lf.select(
-            artist=art_expansion_expr("artist").flatten().flatten().flatten().unique()
+            artist=art_expansion_expr("artist")
+            .flatten()
+            .flatten()
+            .flatten()
+            .flatten()
+            .unique()
         )
         .with_row_index("id")
         .collect()
@@ -128,7 +140,7 @@ def main():
     base_table = base_table.pipe(clean)
     song_table = create_table_song(base_table.lazy())
     artist_table = create_table_artist(base_table.lazy())
-    print(artist_table.tail(20))
+    print(artist_table.tail(100))
     # print(song_table.tail(20))
 
 
