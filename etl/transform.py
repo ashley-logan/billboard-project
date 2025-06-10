@@ -6,7 +6,7 @@ import sqlite3
 
 pl.Config.set_tbl_cols(20)
 pl.Config.set_tbl_rows(100)
-con = sql_driver.connect("./etl/billboard.db")
+# con = sql_driver.connect("./etl/billboard.db")
 """
 TRANFORMATION OUTLINE:
 CREATE TABLE records (
@@ -121,14 +121,11 @@ def parse_artists(song_df) -> pl.DataFrame:
 
     df = df.select(
         pl.col("artist")
-        .str.replace(r"\s[xX]\s", "\s&\s")
+        .str.replace(r"\s[xX]\s", r"\s&\s")
         .str.strip_chars()
         .str.extract_all(pattern2),
         pl.col("role"),
-    ).with_columns(
-        pl.col("artist").list.eval(pl.element().str.strip_chars()),
-        pl.when(pl.col("artist").last() == "His Orchestra").then(pl.col("artist").slice(0, -2).concat(pl.col("artist").slice(-2,).str.join(" and ")
-    )
+    ).with_columns(pl.col("artist").list.eval(pl.element().str.strip_chars()))
 
 
 def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
