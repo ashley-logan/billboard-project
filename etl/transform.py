@@ -103,37 +103,40 @@ def create_table_song(lf):
     )
 
 
-def art_expansion_expr(col):
-    return (
-        pl.col(col)
-        .str.split(" Featuring ")
-        .list.first()
-        .str.split(" With ")
-        .list.eval(
-            pl.element()
-            .str.strip_chars()
-            .str.split(" &")
-            .list.eval(
-                pl.element()
-                .str.strip_chars()
-                .str.split(", ")
-                .list.eval(pl.element().str.strip_chars().str.split(" X "))
-            )
-        )
+def parse_artists(song_df) -> pl.DataFrame:
+    pattern1 = r"(?i)(^.*?)(?:\sfeat.?[a-z]*\s|with\s)(.*$)"
+    pattern2 = r"(([^&,/+]+)+?)"
+
+    song_df: pl.DataFrame = song_df.with_columns(
+        pl.col("artist").replace(r"(?i)duet\swith", "&")
+    )
+
+    main_df: pl.DataFrame = song_df.select(
+        artist=pl.col("artist").str.extract(pattern1, 1)
+    ).with_columns(role=pl.lit("main"))
+    feat_df: pl.DataFrame = song_df.select(
+        artist=pl.col("artist").str.extract(pattern1, 2)
+    ).with_columns(role=pl.lit("featured"))
+    df = pl.concat([main_df, feat_df]).drop_nulls(subset=["artist"])
+
+    df = df.select(
+        pl.col("artist")
+        .str.replace(r"\s[xX]\s", "\s&\s")
+        .str.strip_chars()
+        .str.extract_all(pattern2),
+        pl.col("role"),
+    ).with_columns(
+        pl.col("artist").list.eval(pl.element().str.strip_chars()),
+        pl.when(pl.col("artist").last() == "His Orchestra").then(pl.col("artist").slice(0, -2).concat(pl.col("artist").slice(-2,).str.join(" and ")
     )
 
 
 def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
+    pass
     return (
         lf.unique(subset=["song", "artist"])
         .join(song_table.lazy(), on=["song", "artist"], how="inner")
-        .select(
-            song_id=pl.col("id"),
-            song=pl.col("song"),
-            artist=art_expansion_expr("artist"),
-        )
-        .explode(["artist"])
-        .explode(["artist"])
+        .select(pl.col("id").alias("song_id"), pl.col("song"), pl.col("artist"))
         .explode(["artist"])
         .explode(["artist"])
         .join(artist_table.lazy(), on="artist", how="inner")
@@ -144,15 +147,9 @@ def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
 
 
 def create_table_artist(lf) -> pl.DataFrame:
+    pass
     return (
-        lf.select(
-            artist=art_expansion_expr("artist")
-            .flatten()
-            .flatten()
-            .flatten()
-            .flatten()
-            .unique()
-        )
+        lf.select(artist=art_expansion_expr("artist").flatten().flatten().unique())
         .with_row_index("id")
         .collect()
     )
@@ -162,10 +159,9 @@ def main():
     base_table = load()
     base_table = base_table.pipe(clean)
     song_table = create_table_song(base_table.lazy())
-    artist_table = create_table_artist(base_table.lazy())
-    junction_table = create_table_junction(base_table.lazy(), song_table, artist_table)
-    print(junction_table.head(20))
-    print(song_table.head(20))
+    # artist_table = create_table_artist(base_table.lazy())
+    # junction_table = create_table_junction(base_table.lazy(), song_table, artist_table)
+    print(parse_artists(song_table).head(40))
 
 
 if __name__ == "__main__":
