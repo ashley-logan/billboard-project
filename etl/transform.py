@@ -61,7 +61,7 @@ def load():
 
 
 def create_table_song(lf):
-    decades: range = range(1970, 2030, 10)
+    decades: range = range(1960, 2030, 10)
     return (
         lf.cast({"date": pl.Date})
         .group_by(["song", "artist"])
@@ -73,7 +73,7 @@ def create_table_song(lf):
             earliest=pl.min("date"),
             latest=pl.max("date"),
         )
-        .with_row_index("id")
+        .with_row_index("_id")
         .sort(by="earliest")
         .with_columns(
             decade=(
@@ -89,7 +89,7 @@ def create_table_song(lf):
         .sort(by="power", descending=True)
         .select(
             [
-                "id",
+                "_id",
                 "song",
                 "artist",
                 "power",
