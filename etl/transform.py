@@ -73,7 +73,7 @@ def create_table_song(lf):
             earliest=pl.min("date"),
             latest=pl.max("date"),
         )
-        .with_row_index("_id")
+        .with_row_index("id")
         .sort(by="earliest")
         .with_columns(
             decade=(
@@ -89,7 +89,7 @@ def create_table_song(lf):
         .sort(by="power", descending=True)
         .select(
             [
-                "_id",
+                "id",
                 "song",
                 "artist",
                 "power",
