@@ -11,8 +11,8 @@ pl.Config.set_tbl_rows(100)
 TRANFORMATION OUTLINE:
 CREATE TABLE records (
 id INT PRIMARY KEY
+date VARCHAR (ISO FORMAT) 
 position INT
-date "DATE 
 song_id INT FOREIGN KEY
 )
 
@@ -37,95 +37,62 @@ CREATE TABLE song-artist (
 
 """
 
+def load():
+    return pl.read_json("./data/records05-29_23-57.json").lazy()
 
-def clean(df):
+def clean(lf):
     return (
         df.cast({"date": pl.Date, "position": pl.UInt8})
-        .filter(pl.col("date") >= date(1960, 1, 1))
         .sort(by="date")
         .with_row_index("id")
         .select(["id", "date", "position", "song", "artist"])
     )
 
-
-def load():
-    return pl.read_json("./data/records05-29_23-57.json")
-    rawdf: pl.DataFrame = pl.read_json("./data/records05-29_23-57.json")
-    cleandf: pl.DataFrame = rawdf.pipe(clean)
-    cleandf.write_database(
-        table_name="records_table",
-        connection=con,
-        if_table_exists="fail",
-        engine="adbc",
-    )
-
-
 def create_table_song(lf):
-    decades: range = range(1960, 2030, 10)
+    # score_calcs: dict =  {
+    #     "pos_weighted": (1 / pl.col("position")).sum,
+    #     "longevity_weighted": (101 - pl.col("position")).truediv(100).sum,
+    #     "unweighted": (pl.lit(100).log1p() - pl.col("position").log1p()).sum,
+    # }
+    decade_cuts: range =  range(1970, 2030, 10)
+    decade_labels = [f"{decade}s" for decade in range(1960, 2030, 10)]
     return (
         lf.cast({"date": pl.Date})
         .group_by(["song", "artist"])
         .agg(
-            power=(1 / pl.col("position")).sum(),
-            longevity=(1 / (pl.col("position").log1p())).sum(),
-            weeks_on_chart=pl.len(),
-            proportion_top10=((pl.col("position") <= 10).sum() / pl.len()),
-            earliest=pl.min("date"),
-            latest=pl.max("date"),
+            # position_score=score_calcs["pos_weighted"](),
+            # longevity_score=score_calcs["longevity_weighted"](),
+            # overall_score=score_calcs["unweighted"](),
+            chart_debut=pl.min("date"),
+            latest_appearance=pl.max("date"),
         )
         .with_row_index("id")
-        .sort(by="earliest")
+        .sort(by="chart_debut")
         .with_columns(
             decade=(
-                pl.col("earliest")
+                pl.col("chart_debut")
                 .dt.year()
                 .cut(
-                    breaks=decades,
-                    labels=[f"{x - 10}s" for x in decades] + ["2020s"],
-                    left_closed=True,
+                    breaks=decade_cuts,
+                    labels=decade_labels,
+                    left_closed=True
                 )
             )
         )
-        .sort(by="power", descending=True)
+        .sort(by="id", descending=True)
         .select(
             [
                 "id",
                 "song",
                 "artist",
-                "power",
-                "longevity",
-                "earliest",
-                "latest",
+                "chart_debut",
+                "latest_appearance",
                 "decade",
             ]
         )
-        .collect()
     )
 
 
-def parse_artists(song_df) -> pl.DataFrame:
-    pattern1 = r"(?i)(^.*?)(?:\sfeat.?[a-z]*\s|with\s)(.*$)"
-    pattern2 = r"(([^&,/+]+)+?)"
-
-    song_df: pl.DataFrame = song_df.with_columns(
-        pl.col("artist").replace(r"(?i)duet\swith", "&")
-    )
-
-    main_df: pl.DataFrame = song_df.select(
-        artist=pl.col("artist").str.extract(pattern1, 1)
-    ).with_columns(role=pl.lit("main"))
-    feat_df: pl.DataFrame = song_df.select(
-        artist=pl.col("artist").str.extract(pattern1, 2)
-    ).with_columns(role=pl.lit("featured"))
-    df = pl.concat([main_df, feat_df]).drop_nulls(subset=["artist"])
-
-    df = df.select(
-        pl.col("artist")
-        .str.replace(r"\s[xX]\s", r"\s&\s")
-        .str.strip_chars()
-        .str.extract_all(pattern2),
-        pl.col("role"),
-    ).with_columns(pl.col("artist").list.eval(pl.element().str.strip_chars()))
 
 
 def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
@@ -153,12 +120,9 @@ def create_table_artist(lf) -> pl.DataFrame:
 
 
 def main():
-    base_table = load()
-    base_table = base_table.pipe(clean)
-    song_table = create_table_song(base_table.lazy())
-    # artist_table = create_table_artist(base_table.lazy())
-    # junction_table = create_table_junction(base_table.lazy(), song_table, artist_table)
-    print(parse_artists(song_table).head(40))
+    base_table = load().pipe(clean)
+    song_table = base_table.pipe(create_table_song).collect()
+    artist_table = base_table.pipe()
 
 
 if __name__ == "__main__":
