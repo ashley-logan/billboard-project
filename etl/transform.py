@@ -37,16 +37,26 @@ CREATE TABLE song-artist (
 
 """
 
+
 def load():
-    return pl.read_json("./data/records05-29_23-57.json").lazy()
+    return pl.read_json(
+        source="./data/records06-14_15-34.json",
+        schema={
+            "date": pl.Date,
+            "position": pl.UInt8,
+            "song": pl.str,
+            "artist": pl.str,
+        },
+    ).lazy()
+
 
 def clean(lf):
     return (
-        df.cast({"date": pl.Date, "position": pl.UInt8})
-        .sort(by="date")
+        lf.sort(by="date")
         .with_row_index("id")
         .select(["id", "date", "position", "song", "artist"])
     )
+
 
 def create_table_song(lf):
     # score_calcs: dict =  {
@@ -54,7 +64,7 @@ def create_table_song(lf):
     #     "longevity_weighted": (101 - pl.col("position")).truediv(100).sum,
     #     "unweighted": (pl.lit(100).log1p() - pl.col("position").log1p()).sum,
     # }
-    decade_cuts: range =  range(1970, 2030, 10)
+    decade_cuts: range = range(1970, 2030, 10)
     decade_labels = [f"{decade}s" for decade in range(1960, 2030, 10)]
     return (
         lf.cast({"date": pl.Date})
@@ -72,11 +82,7 @@ def create_table_song(lf):
             decade=(
                 pl.col("chart_debut")
                 .dt.year()
-                .cut(
-                    breaks=decade_cuts,
-                    labels=decade_labels,
-                    left_closed=True
-                )
+                .cut(breaks=decade_cuts, labels=decade_labels, left_closed=True)
             )
         )
         .sort(by="id", descending=True)
@@ -91,8 +97,6 @@ def create_table_song(lf):
             ]
         )
     )
-
-
 
 
 def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:

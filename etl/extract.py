@@ -56,8 +56,8 @@ async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
 async def clean(
     raw_data: list[list[str]],
 ) -> list[dict[int, str]]:
-    idxs: list[int] = [0, 2, 3, 6]
-    col_names: list[str] = ["position", "date", "song", "artist", "wks_on_chart"]
+    idxs: list[int] = [0, 2, 3]
+    col_names: list[str] = ["position", "date", "song", "artist"]
     clean_data = []
     for position, entry in enumerate(raw_data, start=1):
         row_ = [position] + [entry[i] for i in idxs]
