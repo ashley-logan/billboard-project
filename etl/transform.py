@@ -99,8 +99,8 @@ def create_table_song(lf) -> pl.LazyFrame:
     )
 
 
-def clean_artist_col(lf) -> pl.LazyFrame:
-    edge_pat_1 = r"(?i)(\sa\s)?(duet with)"
+def clean_artist_col(col) -> pl.Expr:
+    edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
     # matches any occurance of "duet with" (case insensitive)
     edge_pat_2 = r"(?i)\((feat\.*[a-z]*)|(&)|(with)"
     # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
@@ -158,6 +158,23 @@ def split_artists(lf) -> pl.LazyFrame:
         .str.split("!~!")
         .list.eval(pl.element().str.strip_chars()),
     ).explode(["artist"])
+
+def normalize_artist_names(col: pl.Expr) -> pl.Expr:
+    edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
+    # matches any occurance of "duet with" (case insensitive)
+    edge_pat_2 = r"(?i)\((feat\.*[a-z]*|&|with)(.*?)\)(.*$)"
+    # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
+    edge_pat_3: str = r"(?i)&\s(the|his|her|original)(.*$)"
+    # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
+    return col.str.replace(edge_pat_1, "&").str.replace(edge_pat_2, r"$1$2$3").str.replace(edge_pat_3, r"and $1$2")
+
+def split_artist_names(col: pl.Expr) -> pl.Expr:
+    split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
+    roles = ("main", "featured")
+    col.str.replace(split_pattern, "-").str.split_exact("-", 1).struct.with_fields(
+        main=struct[0].str.replace_all(sep_pattern, "!~!")
+    )
+
 
 
 def create_table_artist(lf) -> pl.LazyFrame:
