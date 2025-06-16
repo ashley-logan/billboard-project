@@ -127,37 +127,6 @@ def clean_artist_col(col) -> pl.Expr:
     )
 
 
-def split_features(lf) -> pl.LazyFrame:
-    split_pattern: str = r"(?i)(\sfeat\.*[a-z]*\s)|(\swith\s)"
-    roles = ["main", "featured"]
-
-    mainlf: pl.LazyFrame = lf.with_columns(
-        artist=pl.col("artist")
-        .str.replace(split_pattern, "-")
-        .str.split_exact("-", 1)
-        .struct[0],
-        role=pl.lit("main"),
-    ).drop_nulls()
-
-    featlf: pl.LazyFrame = lf.with_columns(
-        artist=pl.col("artist")
-        .str.replace(split_pattern, "-")
-        .str.split_exact("-", 1)
-        .struct[1],
-        role=pl.lit("featured"),
-    ).drop_nulls()
-
-    return pl.concat([mainlf, featlf]).cast({"role": pl.Enum(roles)})
-
-
-def split_artists(lf) -> pl.LazyFrame:
-    seperator_sub: str = r"(?i)(\s*[&/+,]\s*)|(x\s)"
-    return lf.with_columns(
-        artist=pl.col("artist")
-        .str.replace_all(seperator_sub, "!~!")
-        .str.split("!~!")
-        .list.eval(pl.element().str.strip_chars()),
-    ).explode(["artist"])
 
 def normalize_artist_names(col: pl.Expr) -> pl.Expr:
     edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
@@ -168,14 +137,51 @@ def normalize_artist_names(col: pl.Expr) -> pl.Expr:
     # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
     return col.str.replace(edge_pat_1, "&").str.replace(edge_pat_2, r"$1$2$3").str.replace(edge_pat_3, r"and $1$2")
 
-def split_artist_names(col: pl.Expr) -> pl.Expr:
+def split_artist_names1(col: pl.Expr) -> pl.Expr:
     split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
-    roles = ("main", "featured")
-    col.str.replace(split_pattern, "-").str.split_exact("-", 1).struct.with_fields(
-        main=struct[0].str.replace_all(sep_pattern, "!~!")
+    sep_pattern: str = r"(?i)\s*[&/+,]\s*|\sx\s"
+
+    return (
+        col.str.replace(split_pattern, "-")
+        .str.split_exact("-", 1)
+        .struct.rename_fields(["main", "featuring"])
+    ).struct.with_fields(
+        pl.field("*").str.strip_chars().str.replace_all(sep_pattern, "!~!")
+    ).struct.unnest()
+def split_artist_names2(col: pl.Expr) -> pl.Expr:
+    return (
+        col.str.split("!~!").list.eval(pl.element().str.strip_chars())
+    )
+def artist_transformation(lf) -> pl.LazyFrame:
+    return (
+        lf.with_columns(
+        pl.col("artist")
+        .pipe(normalize_artist_names)
+        .pipe(split_artist_names1)
+    ).drop(["artist"]).unpivot(index=["id", "date", "position", "song"], variable_name="role", value_name="artist")
+    .drop_nulls()
+    .with_columns(
+        pl.col("artist")
+        .pipe(split_artist_names2),
+    ).with_columns(
+        pl.col("artist").list.sort().alias("artist_sorted")
+    ).unique(subset=["song", "artist_sorted"]
+    ).drop(["artist_sorted"])
     )
 
-
+def get_unique_songs(lf) -> pl.LazyFrame:
+    return (
+        lf.with_columns(
+        pl.col("artist")
+        .pipe(normalize_artist_names)
+        .pipe(split_artist_names1)
+        ).select(["song", "main", "featuring"])
+        .with_columns(
+            pl.col("main").pipe(split_artist_names2),
+            pl.col("featuring").pipe(split_artist_names2)
+        )
+    ) #from this table I can create the songs table and the junction table, and the artist table
+    
 
 def create_table_artist(lf) -> pl.LazyFrame:
     return (
@@ -215,10 +221,8 @@ def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
 
 def main():
     base_table = load()
-    song_table = base_table.pipe(create_table_song).collect()
-    artist_table = base_table.pipe(create_table_artist).collect()
-
-    print(artist_table.head(20))
+    test = get_unique_songs(base_table).collect()
+    print(test.head(20))
 
 
 if __name__ == "__main__":
