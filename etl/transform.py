@@ -132,18 +132,29 @@ def split_artist_names2(col: pl.Expr) -> pl.Expr:
 
 
 def get_song_table(lf) -> pl.LazyFrame:
+    decade_cuts: range = range(1970, 2030, 10)
+    decade_labels = [f"{decade}s" for decade in range(1960, 2030, 10)]
     return (
         lf.with_columns(
             pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
         )
-        .select(["song", "main", "featuring"])
+        .drop("artist")
         .with_columns(
-            pl.col("main").pipe(split_artist_names2),
-            pl.col("featuring").pipe(split_artist_names2),
+            pl.col("main").pipe(split_artist_names2).sort(),
+            pl.col("featuring").pipe(split_artist_names2).sort(),
         )
-        .unique(["song", "main", "featuring"])
+        .group_by(["song", "main", "featuring"])
+        .agg(chart_debut=pl.min("date"))
+        .sort(by="chart_debut")
         .with_row_index("id")
-        .select(["id", "song"])
+        .with_columns(
+            decade=(
+                pl.col("chart_debut")
+                .dt.year()
+                .cut(breaks=decade_cuts, labels=decade_labels, left_closed=True)
+            )
+        )
+        .select(["id", "song", "chart_debut", "decade"])
         .drop_nulls()
     )
 
@@ -188,16 +199,31 @@ def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
         .drop("artist")
         .rename({"id": "artist_id"})
         .select(["song_id", "artist_id", "role"])
+        .unique()
         .drop_nulls()
     )
 
 
-def transform(file_name):
-    base_table = load_data(file_name)
-    song_tbl = get_song_table(base_table)
-    artist_tbl = get_artist_table(base_table)
-    junc = get_junction_table(base_table, song_tbl, artist_tbl).collect()
+def clean_base_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
+    return (
+        lf.with_columns(date=pl.col("date").dt.to_string("iso"))
+        .unique(subset=["date", "position"])
+        .join(song_tbl, on="song", how="left", suffix="_song")
+        .select(["id", "date", "position", "id_song"])
+    )
+
+
+def transform(file_name) -> list[pl.DataFrame]:
+    base_table: pl.LazyFrame = load_data(file_name)
+    song_tbl: pl.LazyFrame = base_table.pipe(get_song_table)
+    artist_tbl: pl.LazyFrame = base_table.pipe(get_artist_table)
+    junction_tbl: pl.LazyFrame = base_table.pipe(
+        get_junction_table, song_tbl, artist_tbl
+    )
+    return pl.collect_all([base_table, song_tbl, artist_tbl, junction_tbl])
 
 
 if __name__ == "__main__":
-    transform(file_name="records06-14_15-34.json")
+    tbls = transform(file_name="records06-14_15-34.json")
+    for tbl in tbls:
+        print(tbl.head(20))

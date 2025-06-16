@@ -1,0 +1,1 @@
+import adbc_driver_sqlite.dbapi
