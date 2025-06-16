@@ -124,6 +124,7 @@ def dump_json(data: list[list]):
     with filepath.open("w") as f:
         json.dump(data, f, indent=2)
     print(f"wrote json file to {filepath}")
+    return filename
 
 
 async def extract(
@@ -145,8 +146,9 @@ async def extract(
         for i in range(10):
             batches.append(tg.create_task(clean_worker(i, queue2)))
 
-    dump_json([row for batch in batches for row in batch.result()])
+    file_name = dump_json([row for batch in batches for row in batch.result()])
     print(f"script finished in {time.time() - start} seconds")
+    return file_name
 
 
 # if __name__ == "__main__":

@@ -43,7 +43,8 @@ async def main():
         "semaphore": asyncio.Semaphore(15),
         "parser_config": parser_config,
     }
-    await extract(**extract_config)
+    file_name = await extract(**extract_config)
+    transform(file_name)
 
 
 if __name__ == "__main__":

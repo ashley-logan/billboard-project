@@ -1,11 +1,11 @@
-from datetime import date
 import polars as pl
-import adbc_driver_sqlite.dbapi as sql_driver
-import pyarrow
-import sqlite3
+from pathlib import Path
 
 pl.Config.set_tbl_cols(20)
 pl.Config.set_tbl_rows(100)
+project_dir = Path(__file__).parent.parent
+data_path = (project_dir / "data").resolve()
+
 # con = sql_driver.connect("./etl/billboard.db")
 """
 TRANFORMATION OUTLINE:
@@ -38,10 +38,11 @@ CREATE TABLE song-artist (
 """
 
 
-def load():
+def load_data(file_name):
+    file_path = data_path / file_name
     return (
         pl.read_json(
-            source="./data/records06-14_15-34.json",
+            source=file_path,
             schema={
                 "position": pl.UInt8,
                 "date": pl.String,
@@ -55,10 +56,6 @@ def load():
         .select(["id", "date", "position", "song", "artist"])
         .lazy()
     )
-
-
-def get_unique_frame(lf):
-    return lf.unique(subset=["song", "artist"])
 
 
 def create_table_song(lf) -> pl.LazyFrame:
@@ -99,35 +96,6 @@ def create_table_song(lf) -> pl.LazyFrame:
     )
 
 
-def clean_artist_col(col) -> pl.Expr:
-    edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
-    # matches any occurance of "duet with" (case insensitive)
-    edge_pat_2 = r"(?i)\((feat\.*[a-z]*)|(&)|(with)"
-    # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
-    edge_pat_3: str = r"(?i)&\s(the|his|her|original)(.*)"
-    # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
-    return (
-        lf.unique(subset=["song", "artist"])
-        .with_columns(
-            # filter out duplicate song entries; include artist in the subset to avoid grouping songs with the same title together
-            artist=pl.col("artist").replace(edge_pat_1, "&")
-            # replace "duet with" with & since it practically acts as a second class seperator rather than a first class seperator
-        )
-        .with_columns(
-            artist=pl.when(pl.col("artist").str.contains(edge_pat_2))
-            .then(pl.col("artist").str.replace_all(r"[()]", ""))
-            .otherwise(pl.col("artist"))
-            # strip parentheses from entries that only use parenthese to include a feature since it complicated whitespace when regexing later
-        )
-        .select(
-            artist=pl.col("artist").str.replace_all(edge_pat_3, r"and $1$2"),
-            song="song",
-            # entries matching edge_pat_3 contain band names and should not be seperated, so "&"" is replaced with "and" which is not recognized as a seperator
-        )
-    )
-
-
-
 def normalize_artist_names(col: pl.Expr) -> pl.Expr:
     edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
     # matches any occurance of "duet with" (case insensitive)
@@ -135,95 +103,101 @@ def normalize_artist_names(col: pl.Expr) -> pl.Expr:
     # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
     edge_pat_3: str = r"(?i)&\s(the|his|her|original)(.*$)"
     # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
-    return col.str.replace(edge_pat_1, "&").str.replace(edge_pat_2, r"$1$2$3").str.replace(edge_pat_3, r"and $1$2")
+    return (
+        col.str.replace(edge_pat_1, "&")
+        .str.replace(edge_pat_2, r"$1$2$3")
+        .str.replace(edge_pat_3, r"and $1$2")
+    )
+
 
 def split_artist_names1(col: pl.Expr) -> pl.Expr:
     split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
     sep_pattern: str = r"(?i)\s*[&/+,]\s*|\sx\s"
 
     return (
-        col.str.replace(split_pattern, "-")
-        .str.split_exact("-", 1)
-        .struct.rename_fields(["main", "featuring"])
-    ).struct.with_fields(
-        pl.field("*").str.strip_chars().str.replace_all(sep_pattern, "!~!")
-    ).struct.unnest()
-def split_artist_names2(col: pl.Expr) -> pl.Expr:
-    return (
-        col.str.split("!~!").list.eval(pl.element().str.strip_chars())
-    )
-def artist_transformation(lf) -> pl.LazyFrame:
-    return (
-        lf.with_columns(
-        pl.col("artist")
-        .pipe(normalize_artist_names)
-        .pipe(split_artist_names1)
-    ).drop(["artist"]).unpivot(index=["id", "date", "position", "song"], variable_name="role", value_name="artist")
-    .drop_nulls()
-    .with_columns(
-        pl.col("artist")
-        .pipe(split_artist_names2),
-    ).with_columns(
-        pl.col("artist").list.sort().alias("artist_sorted")
-    ).unique(subset=["song", "artist_sorted"]
-    ).drop(["artist_sorted"])
+        (
+            col.str.replace(split_pattern, "-")
+            .str.split_exact("-", 1)
+            .struct.rename_fields(["main", "featuring"])
+        )
+        .struct.with_fields(
+            pl.field("*").str.strip_chars().str.replace_all(sep_pattern, "!~!")
+        )
+        .struct.unnest()
     )
 
-def get_unique_songs(lf) -> pl.LazyFrame:
+
+def split_artist_names2(col: pl.Expr) -> pl.Expr:
+    return col.str.split("!~!").list.eval(pl.element().str.strip_chars())
+
+
+def get_song_table(lf) -> pl.LazyFrame:
     return (
         lf.with_columns(
-        pl.col("artist")
-        .pipe(normalize_artist_names)
-        .pipe(split_artist_names1)
-        ).select(["song", "main", "featuring"])
+            pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+        )
+        .select(["song", "main", "featuring"])
         .with_columns(
             pl.col("main").pipe(split_artist_names2),
-            pl.col("featuring").pipe(split_artist_names2)
+            pl.col("featuring").pipe(split_artist_names2),
         )
-    ) #from this table I can create the songs table and the junction table, and the artist table
-    
-
-def create_table_artist(lf) -> pl.LazyFrame:
-    return (
-        lf.pipe(clean_artist_col)
-        .pipe(split_features)
-        .pipe(split_artists)
-        .unique(subset=["artist"])
+        .unique(["song", "main", "featuring"])
         .with_row_index("id")
-        .select(["id", "artist"])
+        .select(["id", "song"])
+        .drop_nulls()
     )
 
 
-def create_table_junction(lf) -> pl.LazyFrame:
+def get_artist_table(lf) -> pl.LazyFrame:
+    df = lf.with_columns(
+        pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+    ).select(["song", "main", "featuring"])
     return (
-        lf.pipe(clean_artist_col)
-        .pipe(split_features)
-        .pipe(split_artists)
-        .select(["artist", "song", "role"])
-        .join(artist)
+        pl.concat(
+            [
+                df.select(song="song", artist="main"),
+                df.select(song="song", artist="featuring"),
+            ]
+        )
+        .with_columns(pl.col("artist").pipe(split_artist_names2))
+        .explode(["artist"])
+        .unique(["artist"])
+        .with_row_index("id")
+        .select("id", "artist")
+        .drop_nulls()
     )
 
 
-def create_table_junction(lf, song_table, artist_table) -> pl.DataFrame:
-    pass
+def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
     return (
-        lf.unique(subset=["song", "artist"])
-        .join(song_table.lazy(), on=["song", "artist"], how="inner")
-        .select(pl.col("id").alias("song_id"), pl.col("song"), pl.col("artist"))
+        lf.with_columns(
+            pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+        )
+        .select(["song", "main", "featuring"])
+        .unpivot(
+            index=["song"],
+            variable_name="role",
+            value_name="artist",
+        )
+        .with_columns(pl.col("artist").pipe(split_artist_names2))
         .explode(["artist"])
-        .explode(["artist"])
-        .join(artist_table.lazy(), on="artist", how="inner")
+        .join(song_tbl, on="song", how="left")
+        .drop("song")
+        .rename({"id": "song_id"})
+        .join(artist_tbl, on="artist", how="left")
+        .drop("artist")
         .rename({"id": "artist_id"})
-        .select(["song_id", "song", "artist_id", "artist"])
-        .collect()
+        .select(["song_id", "artist_id", "role"])
+        .drop_nulls()
     )
 
 
-def main():
-    base_table = load()
-    test = get_unique_songs(base_table).collect()
-    print(test.head(20))
+def transform(file_name):
+    base_table = load_data(file_name)
+    song_tbl = get_song_table(base_table)
+    artist_tbl = get_artist_table(base_table)
+    junc = get_junction_table(base_table, song_tbl, artist_tbl).collect()
 
 
 if __name__ == "__main__":
-    main()
+    transform(file_name="records06-14_15-34.json")
