@@ -1,0 +1,24 @@
+Client:
+  Timeout:
+    connect: 5.0
+    write: 5.0
+    read: 10.0
+    pool: 10.0
+  Retry:
+    total: 3
+    max_backoff_wait: 15.0
+    backoff_factor: 0.25
+    allowed_methods: ["GET"]
+  ConnectionClient:
+    base_url: "https://www.billboard.com/charts/hot-100/"
+
+Parser:
+  num_scrapes: 100
+  events: ["start", "end"]
+  parent_ele:
+    tag: "ul"
+    class_: "o-chart-results-list-row //"
+  target_eles:
+    tags: ["h3", "span"]
+  parser_ignore: ["NEW", "RE-\nENTRY"]
+

@@ -1,10 +1,9 @@
 import polars as pl
-from pathlib import Path
 
 pl.Config.set_tbl_cols(20)
 pl.Config.set_tbl_rows(100)
-project_dir = Path(__file__).parent.parent
-data_path = (project_dir / "data").resolve()
+pl.Config.set_tbl_width_chars(-1)
+pl.Config.set_tbl_formatting(format="UTF8_FULL")
 
 # con = sql_driver.connect("./etl/billboard.db")
 """
@@ -38,23 +37,20 @@ CREATE TABLE song-artist (
 """
 
 
-def load_data(file_name):
-    file_path = data_path / file_name
+def load_data(load_path):
     return (
-        pl.read_json(
-            source=file_path,
+        pl.scan_parquet(
+            source=load_path,
             schema={
                 "position": pl.UInt8,
-                "date": pl.String,
+                "date": pl.Date,
                 "song": pl.String,
                 "artist": pl.String,
             },
         )
-        .cast({"date": pl.Date})
         .sort(by="date")
         .with_row_index("id")
         .select(["id", "date", "position", "song", "artist"])
-        .lazy()
     )
 
 
@@ -84,19 +80,11 @@ def create_table_song(lf) -> pl.LazyFrame:
             )
         )
         .reverse()
-        .select(
-            [
-                "id",
-                "song",
-                "artist",
-                "debut",
-                "decade",
-            ]
-        )
+        .select(["id", "song", "artist", "debut", "decade", "hash_id"])
     )
 
 
-def normalize_artist_names(col: pl.Expr) -> pl.Expr:
+def handle_edge_cases(col: pl.Expr) -> pl.Expr:
     edge_pat_1 = r"(?i)(\sa\s)?(duet\swith)"
     # matches any occurance of "duet with" (case insensitive)
     edge_pat_2 = r"(?i)\((feat\.*[a-z]*|&|with)(.*?)\)(.*$)"
@@ -110,25 +98,36 @@ def normalize_artist_names(col: pl.Expr) -> pl.Expr:
     )
 
 
-def split_artist_names1(col: pl.Expr) -> pl.Expr:
+def first_and_second_class_insert(artist_col: pl.Expr) -> pl.Expr:
     split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
     sep_pattern: str = r"(?i)\s*[&/+,]\s*|\sx\s"
 
     return (
-        (
-            col.str.replace(split_pattern, "-")
-            .str.split_exact("-", 1)
-            .struct.rename_fields(["main", "featuring"])
+        artist_col.str.replace_all(split_pattern, "!-!")
+        .str.split("!-!")
+        .list.eval(
+            pl.element()
+            .str.strip_chars()
+            .str.replace_all(sep_pattern, "!-!")
+            .str.split("!-!")
+            .list.sort()
+            .list.join("!-!")
         )
-        .struct.with_fields(
-            pl.field("*").str.strip_chars().str.replace_all(sep_pattern, "!~!")
-        )
+        .list.sort()
+        .list.join("!~!")
+    )
+
+
+def first_class_split(col: pl.Expr) -> pl.Expr:
+    return (
+        col.str.split_exact("!~!", n=1)
+        .struct.rename_fields(["main", "featuring"])
         .struct.unnest()
     )
 
 
-def split_artist_names2(col: pl.Expr) -> pl.Expr:
-    return col.str.split("!~!").list.eval(pl.element().str.strip_chars())
+def second_class_split(col: pl.Expr) -> pl.Expr:
+    return col.str.split("!-!").list.eval(pl.element().str.strip_chars())
 
 
 def get_song_table(lf) -> pl.LazyFrame:
@@ -136,17 +135,13 @@ def get_song_table(lf) -> pl.LazyFrame:
     decade_labels = [f"{decade}s" for decade in range(1960, 2030, 10)]
     return (
         lf.with_columns(
-            pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+            artist=pl.col("artist")
+            .pipe(handle_edge_cases)
+            .pipe(first_and_second_class_insert),
         )
-        .drop("artist")
-        .with_columns(
-            pl.col("main").pipe(split_artist_names2).sort(),
-            pl.col("featuring").pipe(split_artist_names2).sort(),
-        )
-        .group_by(["song", "main", "featuring"])
-        .agg(chart_debut=pl.min("date"))
-        .sort(by="chart_debut")
-        .with_row_index("id")
+        .with_columns(id=pl.concat_str(["song", "artist"], separator="|").hash())
+        .group_by(["id", "song", "artist"])
+        .agg(chart_debut=pl.col("date").min())
         .with_columns(
             decade=(
                 pl.col("chart_debut")
@@ -154,14 +149,18 @@ def get_song_table(lf) -> pl.LazyFrame:
                 .cut(breaks=decade_cuts, labels=decade_labels, left_closed=True)
             )
         )
-        .select(["id", "song", "chart_debut", "decade"])
+        .select(["id", "song", "artist", "chart_debut", "decade"])
         .drop_nulls()
+        .sort(by="id", descending=True)
     )
 
 
 def get_artist_table(lf) -> pl.LazyFrame:
     df = lf.with_columns(
-        pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+        pl.col("artist")
+        .pipe(handle_edge_cases)
+        .pipe(first_and_second_class_insert)
+        .pipe(first_class_split)
     ).select(["song", "main", "featuring"])
     return (
         pl.concat(
@@ -170,11 +169,10 @@ def get_artist_table(lf) -> pl.LazyFrame:
                 df.select(song="song", artist="featuring"),
             ]
         )
-        .with_columns(pl.col("artist").pipe(split_artist_names2))
+        .with_columns(pl.col("artist").pipe(second_class_split))
         .explode(["artist"])
         .unique(["artist"])
-        .with_row_index("id")
-        .select("id", "artist")
+        .select("artist", id=pl.col("artist").hash())
         .drop_nulls()
     )
 
@@ -182,48 +180,61 @@ def get_artist_table(lf) -> pl.LazyFrame:
 def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
     return (
         lf.with_columns(
-            pl.col("artist").pipe(normalize_artist_names).pipe(split_artist_names1)
+            artist=pl.col("artist")
+            .pipe(handle_edge_cases)
+            .pipe(first_and_second_class_insert),
         )
-        .select(["song", "main", "featuring"])
+        .with_columns(id_song=pl.concat_str(["song", "artist"], separator="|").hash())
+        .with_columns(pl.col("artist").pipe(first_class_split))
+        .select(["id_song", "main", "featuring"])
         .unpivot(
-            index=["song"],
+            index=["id_song"],
             variable_name="role",
             value_name="artist",
         )
-        .with_columns(pl.col("artist").pipe(split_artist_names2))
+        .with_columns(pl.col("artist").pipe(second_class_split))
         .explode(["artist"])
-        .join(song_tbl, on="song", how="left")
-        .drop("song")
-        .rename({"id": "song_id"})
         .join(artist_tbl, on="artist", how="left")
         .drop("artist")
-        .rename({"id": "artist_id"})
-        .select(["song_id", "artist_id", "role"])
+        .rename({"id": "id_artist"})
+        .select(["id_song", "id_artist", "role"])
         .unique()
         .drop_nulls()
+        .sort(by="id_song", descending=True)
     )
 
 
-def clean_base_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
+def clean_base_table(lf, song_tbl) -> pl.LazyFrame:
     return (
-        lf.with_columns(date=pl.col("date").dt.to_string("iso"))
+        lf.with_columns(
+            date=pl.col("date").dt.to_string("iso"),
+            artist=pl.col("artist")
+            .pipe(handle_edge_cases)
+            .pipe(first_and_second_class_insert),
+        )
         .unique(subset=["date", "position"])
-        .join(song_tbl, on="song", how="left", suffix="_song")
-        .select(["id", "date", "position", "id_song"])
+        .with_columns(id_song=pl.concat_str(["song", "artist"], separator="|").hash())
+        .select(["id_song", "date", "position", "artist"])
+        .sort(by="id_song", descending=True)
     )
 
 
-def transform(file_name) -> list[pl.DataFrame]:
-    base_table: pl.LazyFrame = load_data(file_name)
+def transform(load_path) -> dict[str, pl.DataFrame]:
+    base_table: pl.LazyFrame = load_data(load_path)
     song_tbl: pl.LazyFrame = base_table.pipe(get_song_table)
     artist_tbl: pl.LazyFrame = base_table.pipe(get_artist_table)
+    records_tbl = base_table.pipe(clean_base_table, song_tbl)
     junction_tbl: pl.LazyFrame = base_table.pipe(
         get_junction_table, song_tbl, artist_tbl
     )
-    return pl.collect_all([base_table, song_tbl, artist_tbl, junction_tbl])
+    df_names: list[str] = ["songdf", "artistdf", "recordsdf", "junctiondf"]
+    dfs: list[pl.DataFrame] = pl.collect_all(
+        [song_tbl, artist_tbl, records_tbl, junction_tbl]
+    )
+    return dict(zip(df_names, dfs))
 
 
-if __name__ == "__main__":
-    tbls = transform(file_name="records06-14_15-34.json")
-    for tbl in tbls:
-        print(tbl.head(20))
+# if __name__ == "__main__":
+#     tbls_dict = transform()
+#     for df in tbls_dict.values():
+#         print(df.head(20))

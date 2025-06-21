@@ -1,42 +1,21 @@
 import asyncio
 import datetime as dt
 import time
-import json
+import pyarrow
+import polars as pl
 from typing import Generator
-from pathlib import Path
-from client_pkg import ThrottledClient
-from parser_pkg import HTMLTargetParser
+from utils import ThrottledClient, HTMLTargetParser, round_date
 
 
-OLDEST = dt.datetime(1958, 8, 4)
-
-
-def normalize_to_sat(func):
-    def wrapper(*args, **kwargs):
-        if not args and not kwargs:
-            date = dt.datetime.today()
-        else:
-            date = kwargs.get("date") if "date" in kwargs else args[0]
-
-        if not isinstance(date, dt.datetime):
-            raise TypeError(f"Expected datetime object, got {type(date).__name__}")
-        while date.weekday() != 5:
-            date += dt.timedelta(days=1)
-        kwargs["date"] = date
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-@normalize_to_sat
+@round_date
 def date_generator(
-    date: dt.datetime = dt.datetime.today(), delta: int = 1
-) -> Generator[dt.datetime, None, None]:
+    start_date: dt.date, end_date: dt.date, delta: int = 1
+) -> Generator[dt.date, None, None]:
     # infintite generator for dates that takes the timedelta as a paramater
-    curr = date
-    while curr >= OLDEST:
+    curr = start_date
+    while curr <= end_date:
         yield curr
-        curr -= dt.timedelta(weeks=delta)
+        curr += dt.timedelta(weeks=delta)
 
 
 async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
@@ -58,12 +37,11 @@ async def clean(
 ) -> list[dict[int, str]]:
     idxs: list[int] = [0, 2, 3]
     col_names: list[str] = ["position", "date", "song", "artist"]
-    clean_data = []
+    clean_data: list = []
     for position, entry in enumerate(raw_data, start=1):
         row_ = [position] + [entry[i] for i in idxs]
         row_ = {col: data for col, data in zip(col_names, row_)}
         clean_data.append(row_)
-    print(clean_data)
     return clean_data
 
 
@@ -72,7 +50,6 @@ async def scrape_worker(
     queue1: asyncio.Queue,
     queue2: asyncio.Queue,
     client: ThrottledClient,
-    semaphore: asyncio.Semaphore,
     parser_kwargs: dict,
 ):
     i = 0
@@ -81,8 +58,8 @@ async def scrape_worker(
         if item is None:
             break
         date, tail_url = item
-        async with semaphore:
-            raw_data = await html_driver(date, tail_url, client, parser_kwargs)
+        async with asyncio.Semaphore(15):
+            raw_data = html_driver(date, tail_url, client, parser_kwargs)
         await queue2.put(raw_data)
         i += 1
         print(f"succesfully queued raw data {i} in worker {num}")
@@ -101,7 +78,7 @@ async def html_driver(
                 break
     data: list[list] = parser.get_data()
     print(f"parsed data from {date.date().isoformat()}")
-    return [[date.date().isoformat()] + row for row in data]
+    return [[date.date()] + row for row in data]
 
 
 async def url_producer(dates: Generator, queue1: asyncio.Queue):
@@ -112,41 +89,40 @@ async def url_producer(dates: Generator, queue1: asyncio.Queue):
         await queue1.put(None)
 
 
-def dump_json(data: list[list]):
-    curr_dir = Path.cwd()
-    output_folder = curr_dir / "./data"
-    timestamp = dt.datetime.now()
-    date = timestamp.strftime("%m-%d_%H-%M")
-    filename = f"records{date}.json"
-    filepath = output_folder / filename
-    output_folder.mkdir(exist_ok=True)
-
-    with filepath.open("w") as f:
-        json.dump(data, f, indent=2)
-    print(f"wrote json file to {filepath}")
+def dump_parquet(data: list[list], extract_path):
+    pl.DataFrame(
+        data,
+        schema={
+            "position": pl.UInt8,
+            "date": pl.Date,
+            "song": pl.String,
+            "artist": pl.String,
+        },
+    ).write_parquet(extract_path, compression="snappy", use_pyarrow=True)
+    print(f"wrote parquet file to {extract_path}")
     return filename
 
 
 async def extract(
-    client_config: dict, semaphore: asyncio.Semaphore, parser_config: dict
+    client_config: dict,
+    parser_config: dict,
+    date_range: tuple[dt.date],
+    extract_path: str,
 ):
-    start = time.time()
-    queue1 = asyncio.Queue(maxsize=15)
-    queue2 = asyncio.Queue()
-    dates = date_generator()
+    start: float = time.time()
+    queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
+    queue2: asyncio.Queue = asyncio.Queue()
     client = ThrottledClient(**client_config)
     batches = []
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(url_producer(dates, queue1))
+        tg.create_task(url_producer(date_generator(date_range), queue1))
         for i in range(10):
-            tg.create_task(
-                scrape_worker(i, queue1, queue2, client, semaphore, parser_config)
-            )
+            tg.create_task(scrape_worker(i, queue1, queue2, client, parser_config))
 
         for i in range(10):
             batches.append(tg.create_task(clean_worker(i, queue2)))
 
-    file_name = dump_json([row for batch in batches for row in batch.result()])
+    dump_parquet([row for batch in batches for row in batch.result()], extract_path)
     print(f"script finished in {time.time() - start} seconds")
     return file_name
 
