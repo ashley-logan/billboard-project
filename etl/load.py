@@ -10,10 +10,17 @@ ROOT_DIR: Path = Path(__file__).parent.parent
 def get_extract_config():
     db_path = ROOT_DIR / "data/processed_data/chart-analytics.db"
     with duckdb.connect(database=str(db_path)) as con:
-        start_date: dt.date = con.sql(
-            "SELECT COALESCE(MAX(date) + 7, {OLDEST_RECORD_DATE}) FROM records;"
-        ).scalar()
-        end_date: dt.date = con.sql("SELECT CURRENT_DATE").scalar()
+        exists: bool = con.sql(
+            "SELECT COUNT(*) > 0 FROM information_schema.tables WHERE table_name = 'records'"
+        ).fetchone()[0]
+        print(exists)
+        if exists:
+            start_date: dt.date = con.sql(
+                "SELECT MAX(date) + INTERVAL 7 DAY FROM records"
+            ).scalar()
+        else:
+            start_date: dt.date = OLDEST_RECORD_DATE
+        end_date: dt.date = con.sql("SELECT CURRENT_DATE").fetchone()[0]
 
     filename = f"raw-data_{dt.date.today().strftime('%m-%d')}.parquet"
     extract_path = ROOT_DIR / "data/raw_data" / filename

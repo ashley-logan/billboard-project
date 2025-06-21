@@ -59,7 +59,7 @@ async def scrape_worker(
             break
         date, tail_url = item
         async with asyncio.Semaphore(15):
-            raw_data = html_driver(date, tail_url, client, parser_kwargs)
+            raw_data = await html_driver(date, tail_url, client, parser_kwargs)
         await queue2.put(raw_data)
         i += 1
         print(f"succesfully queued raw data {i} in worker {num}")
@@ -77,8 +77,8 @@ async def html_driver(
             if parser.at_quota:
                 break
     data: list[list] = parser.get_data()
-    print(f"parsed data from {date.date().isoformat()}")
-    return [[date.date()] + row for row in data]
+    print(f"parsed data from {date.isoformat()}")
+    return [[date] + row for row in data]
 
 
 async def url_producer(dates: Generator, queue1: asyncio.Queue):
@@ -100,7 +100,6 @@ def dump_parquet(data: list[list], extract_path):
         },
     ).write_parquet(extract_path, compression="snappy", use_pyarrow=True)
     print(f"wrote parquet file to {extract_path}")
-    return filename
 
 
 async def extract(
@@ -115,7 +114,7 @@ async def extract(
     client = ThrottledClient(**client_config)
     batches = []
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(url_producer(date_generator(date_range), queue1))
+        tg.create_task(url_producer(date_generator(*date_range), queue1))
         for i in range(10):
             tg.create_task(scrape_worker(i, queue1, queue2, client, parser_config))
 

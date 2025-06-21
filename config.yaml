@@ -1,15 +1,15 @@
 Client:
-  Timeout:
+  TimeoutConfig:
     connect: 5.0
     write: 5.0
     read: 10.0
     pool: 10.0
-  Retry:
+  RetryConfig:
     total: 3
     max_backoff_wait: 15.0
     backoff_factor: 0.25
     allowed_methods: ["GET"]
-  ConnectionClient:
+  ConnectionClientConfig:
     base_url: "https://www.billboard.com/charts/hot-100/"
 
 Parser:
