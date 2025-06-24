@@ -1,40 +1,10 @@
 import polars as pl
+from pathlib import Path
 
 pl.Config.set_tbl_cols(20)
 pl.Config.set_tbl_rows(100)
 pl.Config.set_tbl_width_chars(-1)
 pl.Config.set_tbl_formatting(format="UTF8_FULL")
-
-# con = sql_driver.connect("./etl/billboard.db")
-"""
-TRANFORMATION OUTLINE:
-CREATE TABLE records (
-id INT PRIMARY KEY
-date VARCHAR (ISO FORMAT) 
-position INT
-song_id INT FOREIGN KEY
-)
-
-CREATE TABLE song (
-id INT PRIMARY KEY
-name VARCHAR
-power FLOAT
-longevity FLOAT
-earliest DATE
-latest DATE
-decade TEXT
-)
-
-CREATE TABLE artist (
-id INT PRIMARY KEY
-name VARCHAR
-)
-
-CREATE TABLE song-artist (
-(artist_id INT, song_id INT) PRIMARY KEY
-)
-
-"""
 
 
 def load_data(load_path):
@@ -89,7 +59,7 @@ def handle_edge_cases(col: pl.Expr) -> pl.Expr:
     # matches any occurance of "duet with" (case insensitive)
     edge_pat_2 = r"(?i)\((feat\.*[a-z]*|&|with)(.*?)\)(.*$)"
     # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
-    edge_pat_3: str = r"(?i)&\s(the|his|her|original)(.*$)"
+    edge_pat_3: str = r"(?i)&\s(the|his|her|original|co\.)(.*$)"
     # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
     return (
         col.str.replace(edge_pat_1, "&")
@@ -151,7 +121,7 @@ def get_song_table(lf) -> pl.LazyFrame:
         )
         .select(["id", "song", "artist", "chart_debut", "decade"])
         .drop_nulls()
-        .sort(by="id", descending=True)
+        .sort(by="id", descending=False)
     )
 
 
@@ -172,7 +142,7 @@ def get_artist_table(lf) -> pl.LazyFrame:
         .with_columns(pl.col("artist").pipe(second_class_split))
         .explode(["artist"])
         .unique(["artist"])
-        .select("artist", id=pl.col("artist").hash())
+        .select(id=pl.col("artist").hash(), artist=pl.col("artist"))
         .drop_nulls()
     )
 
@@ -184,7 +154,8 @@ def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
             .pipe(handle_edge_cases)
             .pipe(first_and_second_class_insert),
         )
-        .with_columns(id_song=pl.concat_str(["song", "artist"], separator="|").hash())
+        .unique(subset=["song", "artist"])
+        .join(song_tbl, on=["song", "artist"], how="left", suffix="_song")
         .with_columns(pl.col("artist").pipe(first_class_split))
         .select(["id_song", "main", "featuring"])
         .unpivot(
@@ -204,18 +175,16 @@ def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
     )
 
 
-def clean_base_table(lf, song_tbl) -> pl.LazyFrame:
+def clean_base_table(lf) -> pl.LazyFrame:
     return (
         lf.with_columns(
-            date=pl.col("date").dt.to_string("iso"),
-            artist=pl.col("artist")
+            artists=pl.col("artist")
             .pipe(handle_edge_cases)
             .pipe(first_and_second_class_insert),
         )
         .unique(subset=["date", "position"])
-        .with_columns(id_song=pl.concat_str(["song", "artist"], separator="|").hash())
-        .select(["id_song", "date", "position", "artist"])
-        .sort(by="id_song", descending=True)
+        .select(["date", "position", "song", "artists"])
+        .sort(by="date", descending=True)
     )
 
 
@@ -227,14 +196,20 @@ def transform(load_path) -> dict[str, pl.DataFrame]:
     junction_tbl: pl.LazyFrame = base_table.pipe(
         get_junction_table, song_tbl, artist_tbl
     )
-    df_names: list[str] = ["songdf", "artistdf", "recordsdf", "junctiondf"]
+    df_names: list[str] = ["songsdf", "artistsdf", "recordsdf", "junctiondf"]
     dfs: list[pl.DataFrame] = pl.collect_all(
         [song_tbl, artist_tbl, records_tbl, junction_tbl]
     )
+    dfs[0] = dfs[0].drop(["artist"])
     return dict(zip(df_names, dfs))
 
 
-# if __name__ == "__main__":
-#     tbls_dict = transform()
-#     for df in tbls_dict.values():
-#         print(df.head(20))
+if __name__ == "__main__":
+    ROOT_DIR: Path = Path(__file__).parent.parent
+    path = ROOT_DIR / "data" / "raw_data" / "raw-data_06-22.parquet"
+    tbls_dict = transform(load_path=path)
+    for name, df in tbls_dict.items():
+        if name in ["songsdf", "artistsdf"]:
+            print(df.filter(pl.col("id") == 28062906405809626))
+        else:
+            print(df.filter(pl.col("id_song") == 28062906405809626))

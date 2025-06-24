@@ -4,7 +4,11 @@ import time
 import pyarrow
 import polars as pl
 from typing import Generator
-from utils import ThrottledClient, HTMLTargetParser, round_date
+from utils import (
+    ThrottledClient,
+    HTMLTargetParser,
+    round_date,
+)
 
 
 @round_date
@@ -12,7 +16,7 @@ def date_generator(
     start_date: dt.date, end_date: dt.date, delta: int = 1
 ) -> Generator[dt.date, None, None]:
     # infintite generator for dates that takes the timedelta as a paramater
-    curr = start_date
+    curr = start_date.date()
     while curr <= end_date:
         yield curr
         curr += dt.timedelta(weeks=delta)
@@ -89,7 +93,9 @@ async def url_producer(dates: Generator, queue1: asyncio.Queue):
         await queue1.put(None)
 
 
-def dump_parquet(data: list[list], extract_path):
+def dump_parquet(data: list[list], raw_data_path):
+    timestamp = dt.date.today().strftime("%m-%d")
+    parquet_path = f"{raw_data_path}/raw-data_{timestamp}.parquet"
     pl.DataFrame(
         data,
         schema={
@@ -98,32 +104,28 @@ def dump_parquet(data: list[list], extract_path):
             "song": pl.String,
             "artist": pl.String,
         },
-    ).write_parquet(extract_path, compression="snappy", use_pyarrow=True)
-    print(f"wrote parquet file to {extract_path}")
+    ).write_parquet(parquet_path, compression="snappy", use_pyarrow=True)
+    print(f"wrote parquet file to {parquet_path}")
 
 
 async def extract(
     client_config: dict,
     parser_config: dict,
-    date_range: tuple[dt.date],
-    extract_path: str,
+    date_range: tuple[dt.date, dt.date],
+    raw_data_path: str,
 ):
     start: float = time.time()
     queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
     queue2: asyncio.Queue = asyncio.Queue()
-    client = ThrottledClient(**client_config)
-    batches = []
+    client: ThrottledClient = ThrottledClient(**client_config)
     async with asyncio.TaskGroup() as tg:
         tg.create_task(url_producer(date_generator(*date_range), queue1))
         for i in range(10):
             tg.create_task(scrape_worker(i, queue1, queue2, client, parser_config))
+        batches = [tg.create_task(clean_worker(i, queue2)) for i in range(10)]
 
-        for i in range(10):
-            batches.append(tg.create_task(clean_worker(i, queue2)))
-
-    dump_parquet([row for batch in batches for row in batch.result()], extract_path)
+    dump_parquet([row for batch in batches for row in batch.result()], raw_data_path)
     print(f"script finished in {time.time() - start} seconds")
-    return file_name
 
 
 # if __name__ == "__main__":
