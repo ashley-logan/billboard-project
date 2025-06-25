@@ -1,11 +1,12 @@
 import polars as pl
 from pathlib import Path
 
-pl.Config.set_tbl_cols(20)
+pl.Config.set_tbl_cols(200)
 pl.Config.set_tbl_rows(100)
 pl.Config.set_tbl_width_chars(-1)
 pl.Config.set_tbl_formatting(format="UTF8_FULL")
-
+ # if i mistakenly seperate a band name, they should have the exact same artist score and amount of chart entries
+ # total points for a song should be distributed evenly among all artists on a track
 
 def load_data(load_path):
     return (
@@ -59,18 +60,26 @@ def handle_edge_cases(col: pl.Expr) -> pl.Expr:
     # matches any occurance of "duet with" (case insensitive)
     edge_pat_2 = r"(?i)\((feat\.*[a-z]*|&|with)(.*?)\)(.*$)"
     # matches any occurance of an opening parenthese immediately followed by a first class seperator (DEFINE CONST) or "&"
-    edge_pat_3: str = r"(?i)&\s(the|his|her|original|co\.)(.*$)"
+    # edge_pat_3: str = r"(?i)&\s(the|his|her|original|co\.)(.*$)"
     # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
     return (
         col.str.replace(edge_pat_1, "&")
         .str.replace(edge_pat_2, r"$1$2$3")
-        .str.replace(edge_pat_3, r"and $1$2")
+        # .str.replace(edge_pat_3, r"and $1$2")
     )
 
 
+def simple_str_clean(col: pl.Expr) -> pl.Expr:
+    sep_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s|\s*[&/+,]\s*|\sx\s|\sand\s"
+
+    return (
+        col.str.replace_all(sep_pattern, "--")
+        .str.split("--")
+    )
+
 def first_and_second_class_insert(artist_col: pl.Expr) -> pl.Expr:
     split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
-    sep_pattern: str = r"(?i)\s*[&/+,]\s*|\sx\s"
+    sep_pattern: str = r"\s*[&/+,]\s*|\s[xX]\s"
 
     return (
         artist_col.str.replace_all(split_pattern, "!-!")
@@ -180,7 +189,7 @@ def clean_base_table(lf) -> pl.LazyFrame:
         lf.with_columns(
             artists=pl.col("artist")
             .pipe(handle_edge_cases)
-            .pipe(first_and_second_class_insert),
+            .pipe(simple_str_clean),
         )
         .unique(subset=["date", "position"])
         .select(["date", "position", "song", "artists"])
@@ -190,26 +199,10 @@ def clean_base_table(lf) -> pl.LazyFrame:
 
 def transform(load_path) -> dict[str, pl.DataFrame]:
     base_table: pl.LazyFrame = load_data(load_path)
-    song_tbl: pl.LazyFrame = base_table.pipe(get_song_table)
-    artist_tbl: pl.LazyFrame = base_table.pipe(get_artist_table)
-    records_tbl = base_table.pipe(clean_base_table, song_tbl)
-    junction_tbl: pl.LazyFrame = base_table.pipe(
-        get_junction_table, song_tbl, artist_tbl
-    )
-    df_names: list[str] = ["songsdf", "artistsdf", "recordsdf", "junctiondf"]
-    dfs: list[pl.DataFrame] = pl.collect_all(
-        [song_tbl, artist_tbl, records_tbl, junction_tbl]
-    )
-    dfs[0] = dfs[0].drop(["artist"])
-    return dict(zip(df_names, dfs))
+    return base_table.pipe(clean_base_table).collect()
 
 
 if __name__ == "__main__":
     ROOT_DIR: Path = Path(__file__).parent.parent
     path = ROOT_DIR / "data" / "raw_data" / "raw-data_06-22.parquet"
     tbls_dict = transform(load_path=path)
-    for name, df in tbls_dict.items():
-        if name in ["songsdf", "artistsdf"]:
-            print(df.filter(pl.col("id") == 28062906405809626))
-        else:
-            print(df.filter(pl.col("id_song") == 28062906405809626))

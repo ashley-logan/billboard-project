@@ -45,6 +45,7 @@ create_table_queries: list[str] = [
     FOREIGN KEY (id_artist) REFERENCES artists(id),
     PRIMARY KEY (id_song, id_artist, role)
     );
+    
     """,
 ]
 

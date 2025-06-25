@@ -10,8 +10,8 @@ with open("config.yaml") as f:
 async def main():
     date_range = date_range_to_scrape()
     await extract(configs["Client"], configs["Parser"], date_range, RAW_PATH)
-    tables = transform(RAW_PATH)
-    load(tables, DB_PATH)
+    clean_df = transform(RAW_PATH)
+    load(clean_df, DB_PATH)
 
 
 if __name__ == "__main__":
