@@ -52,11 +52,20 @@ create_table_queries: list[str] = [
 
 def date_range_to_scrape() -> tuple[date, date]:
     with duckdb.connect(DB_PATH) as con:
-        for creation_query in create_table_queries:
-            con.execute(creation_query)
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS charts (
+            charts.date DATE,
+            charts.position INTEGER,
+            charts.song TEXT,
+            charts.artists TEXT,
+            PRIMARY KEY (charts.date, charts.position)
+            );
+            """
+        )
 
         start_date: date = con.execute(
-            "SELECT IFNULL(MAX(date) + INTERVAL 7 DAY, ?) FROM records",
+            "SELECT IFNULL(MAX(date) + INTERVAL 7 DAY, ?) FROM charts",
             [OLDEST_RECORD_DATE],
         ).fetchone()[0]
         end_date: date = con.execute("SELECT CURRENT_DATE").fetchone()[0]
