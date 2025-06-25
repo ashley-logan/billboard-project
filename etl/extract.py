@@ -16,7 +16,7 @@ def date_generator(
     start_date: dt.date, end_date: dt.date, delta: int = 1
 ) -> Generator[dt.date, None, None]:
     # infintite generator for dates that takes the timedelta as a paramater
-    curr = start_date.date()
+    curr = start_date
     while curr <= end_date:
         yield curr
         curr += dt.timedelta(weeks=delta)

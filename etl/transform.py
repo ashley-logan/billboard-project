@@ -5,8 +5,9 @@ pl.Config.set_tbl_cols(200)
 pl.Config.set_tbl_rows(100)
 pl.Config.set_tbl_width_chars(-1)
 pl.Config.set_tbl_formatting(format="UTF8_FULL")
- # if i mistakenly seperate a band name, they should have the exact same artist score and amount of chart entries
- # total points for a song should be distributed evenly among all artists on a track
+# if i mistakenly seperate a band name, they should have the exact same artist score and amount of chart entries
+# total points for a song should be distributed evenly among all artists on a track
+
 
 def load_data(load_path):
     return (
@@ -63,8 +64,7 @@ def handle_edge_cases(col: pl.Expr) -> pl.Expr:
     # edge_pat_3: str = r"(?i)&\s(the|his|her|original|co\.)(.*$)"
     # matches any occurance of "& " followed by the, his, her, or original; captures the previous word and the rest of the string
     return (
-        col.str.replace(edge_pat_1, "&")
-        .str.replace(edge_pat_2, r"$1$2$3")
+        col.str.replace(edge_pat_1, "&").str.replace(edge_pat_2, r"$1$2$3")
         # .str.replace(edge_pat_3, r"and $1$2")
     )
 
@@ -72,10 +72,8 @@ def handle_edge_cases(col: pl.Expr) -> pl.Expr:
 def simple_str_clean(col: pl.Expr) -> pl.Expr:
     sep_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s|\s*[&/+,]\s*|\sx\s|\sand\s"
 
-    return (
-        col.str.replace_all(sep_pattern, "--")
-        .str.split("--")
-    )
+    return col.str.replace_all(sep_pattern, "--").str.split("--")
+
 
 def first_and_second_class_insert(artist_col: pl.Expr) -> pl.Expr:
     split_pattern: str = r"(?i)\sfeat\.*[a-z]*\s|\swith\s"
@@ -187,9 +185,7 @@ def get_junction_table(lf, song_tbl, artist_tbl) -> pl.LazyFrame:
 def clean_base_table(lf) -> pl.LazyFrame:
     return (
         lf.with_columns(
-            artists=pl.col("artist")
-            .pipe(handle_edge_cases)
-            .pipe(simple_str_clean),
+            artists=pl.col("artist").pipe(handle_edge_cases).pipe(simple_str_clean),
         )
         .unique(subset=["date", "position"])
         .select(["date", "position", "song", "artists"])
