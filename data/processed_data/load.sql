@@ -1,40 +1,54 @@
--- CREATE temp
--- TABLE (
---     SELECT
---         song,
---         artists,
---         sum(1 / charts.position) AS pos_score,
---         sum(101 - charts.position) AS long_score,
---         sum(1 / ln(charts.position + 1)) AS overall_score,
---         min(charts.date) AS min_date
---     FROM charts
---     GROUP BY
---         ALL
--- ) AS new_songs;
+-- BEGIN TRANSACTION;
 
 
-create temp table staged_artists as (
-with unnested_chart as (
-    select 
-    date,
-    position,
-    song,
-    unnest(artists) as artist
-    from charts
-    ),
+CREATE TEMP TABLE IF NOT EXISTS new_artists AS ( 
 
-    artist_pairs as (
-    select array_agg({date: date, position: position}) as _id,
-    artist
-    from unnested_chart
-    group by artist
+    with by_artist as (
+        SELECT
+            ARRAY_AGG(DISTINCT song) AS artist_songs,
+            u.artist,
+            ARRAY_AGG({date: date, position: position} order by date) as id
+        FROM    
+            charts,
+            unnest(charts.artists) as u(artist),
+        GROUP BY u.artist
     )
+    SELECT
+        row_number() over(order by id[0]) as artist_id,
+        ANY_VALUE(artist_songs) as artist_songs,
+        STRING_AGG(artist, ' and ') as artists
+    FROM by_artist
+    GROUP BY id
+    );
 
-select 
-        array_agg(artist) as artists
-from artist_pairs
-group by _id
-having len(artists) > 1
+CREATE TEMP
+TABLE IF NOT EXISTS new_songs AS (
+    WITH
+        art_songs AS (
+            SELECT
+                UNNEST (artist_songs) AS songs,
+                artist_id,
+                artists
+            FROM new_artists
+        )
+    SELECT
+        row_number() OVER (
+            ORDER BY MIN(DATE)
+        ) AS song_id,
+        song,
+        MIN(DATE) AS debut,
+        ARRAY_AGG (
+            DISTINCT art_songs.artist_id
+            ORDER BY artist_id
+        ) AS song_artists
+    FROM charts ch
+        JOIN art_songs ON ch.song = art_songs.songs
+    GROUP BY
+        song
 );
 
-CREATE temp TABLE new_artists AS ()
+-- DROP TABLE IF EXISTS artists;
+
+-- ALTER TABLE new_artists RENAME TO artists;
+
+-- COMMIT;
