@@ -111,7 +111,7 @@ def dump_parquet(data: list[list], raw_data_path):
 async def extract(
     client_config: dict,
     parser_config: dict,
-    date_range: tuple[dt.date, dt.date],
+    date_range: list[dt.date],
     raw_data_path: str,
 ):
     start: float = time.time()

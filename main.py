@@ -7,7 +7,7 @@ from utils import date_range_to_scrape
 with open("config.yaml") as f:
     configs = yaml.safe_load(f)
 
-root_dir = Path(__file__).parent.parent
+root_dir = Path(__file__).parent
 db_output_folder = root_dir / "data" / "processed_data"
 db_output_folder.mkdir(parents=True, exist_ok=True)
 raw_output_folder = root_dir / "data" / "raw_data"
