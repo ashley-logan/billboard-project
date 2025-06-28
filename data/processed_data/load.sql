@@ -1,5 +1,25 @@
 BEGIN TRANSACTION;
 
+CREATE TEMP TABLE IF NOT EXISTS by_songs as (
+    select
+        song,
+        artists,
+        min(date) as debut,
+        LIST({pos: position, date: date} ORDER BY date) as song_hist
+    from charts
+    group by song, artists
+);
+
+CREATE TEMP TABLE IF NOT EXISTS by_artist as (
+    SELECT
+        LIST({pos: position, date: date} ORDER BY date) as art_hist,
+        artist,
+        list(DISTINCT song) as art_songs
+    FROM charts,
+        unnest(charts.artists) as u(artist)
+    GROUP BY u.artist
+);
+
 CREATE OR REPLACE TEMP TABLE by_artist AS (
     SELECT
         LIST(DISTINCT song) AS artist_songs,
@@ -77,28 +97,3 @@ ALTER TABLE new_artists RENAME TO artists;
 DROP TABLE IF EXISTS songs;
 
 ALTER TABLE new_songs RENAME TO songs;
-
--- CREATE TEMP TABLE IF NOT EXISTS new_songs AS (
---     WITH
---         art_songs AS (
---             SELECT
---                 UNNEST (artist_songs) AS songs,
---                 artist_id,
---                 artists
---             FROM new_artists
---         )
---     SELECT
---         row_number() OVER (
---             ORDER BY MIN(DATE)
---         ) AS song_id,
---         song,
---         MIN(DATE) AS debut,
---         ARRAY_AGG (
---             DISTINCT art_songs.artist_id
---             ORDER BY artist_id
---         ) AS song_artists
---     FROM charts ch
---         JOIN art_songs ON ch.song = art_songs.songs
---     GROUP BY
---         song
--- );
