@@ -12,7 +12,7 @@ db_output_folder = root_dir / "data" / "processed_data"
 db_output_folder.mkdir(parents=True, exist_ok=True)
 raw_output_folder = root_dir / "data" / "raw_data"
 raw_output_folder.mkdir(parents=True, exist_ok=True)
-DB_PATH = db_output_folder / "chart-analytics.duckdb"
+DB_PATH = db_output_folder / "chart-analytics.db"
 RAW_PATH = raw_output_folder
 
 

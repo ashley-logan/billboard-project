@@ -7,7 +7,7 @@ TABLE IF NOT EXISTS song_base AS (
             ORDER BY min(DATE)
         ) AS id_song,
         min(DATE) AS debut
-    FROM charts c,
+    FROM charts,
     GROUP BY
         song,
         artists
@@ -21,10 +21,11 @@ TABLE IF NOT EXISTS artist_base AS (
         ) AS id_artist,
         STRING_AGG (artist, ' and ' ORDER BY id_songs.pos) AS name,
         LIST (artist ORDER BY id_songs.pos) AS name_comps,
-        id_songs[id] AS song_ids
+        id_songs.id AS song_ids
     FROM 
         (SELECT
             artist,
+            row_number() over(PARTITION BY id_song)
             LIST ({'pos': list_indexof(b.artists, u.artist), 'id': id_song}) AS id_songs, 
             MIN(debut) AS art_debut
         FROM song_base b, unnest (b.artists) AS u (artist)
@@ -47,3 +48,9 @@ TABLE IF NOT EXISTS artist_base AS (
 --     GROUP BY
 --         id_song
 -- );
+
+SELECT row_number() OVER (
+        PARTITION BY
+            id_song
+    ) AS id_list, artist, id_song
+FROM song_base b, unnest (b.artists) AS u (artist);
