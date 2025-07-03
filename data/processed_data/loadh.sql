@@ -49,7 +49,8 @@ TABLE IF NOT EXISTS new_songs AS (
     SELECT
         id_song AS id,
         song AS title,
-        string_agg (DISTINCT name_string, '|') AS artists
+        string_agg (DISTINCT name_string, '|') AS artists,
+        any_value(debut) AS debut
     FROM
         song_base sb,
         unnest (sb.artists) AS u (art)
