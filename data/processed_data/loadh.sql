@@ -13,39 +13,6 @@ TABLE IF NOT EXISTS song_base AS (
         artists
 );
 
--- CREATE TEMP
--- TABLE IF NOT EXISTS artist_base AS (
---     SELECT
---         ROW_NUMBER() OVER (
---             ORDER BY ANY_VALUE(art_debut)
---         ) AS id_artist,
---         STRING_AGG (
---             artist,
---             ' and '
---             ORDER BY row_pos
---         ) AS name,
---         LIST (
---             artist
---             ORDER BY row_pos
---         ) AS name_comps,
---         first(row_pos),
---         id_songs AS song_ids
---     FROM (
---             SELECT
---                 artist, any_value(
---                     list_indexof (b.artists, u.artist)
---                 ) AS row_pos, LIST (
---                     id_song
---                     ORDER BY debut
---                 ) AS id_songs, MIN(debut) AS art_debut
---             FROM song_base b, unnest (b.artists) AS u (artist)
---             GROUP BY
---                 u.artist
---         ) AS by_art
---     GROUP BY
---         id_songs
--- );
-
 create temp table if not exists artist_base as (
     SELECT
         artist,
@@ -71,7 +38,7 @@ TABLE IF NOT EXISTS new_artists AS (
             ' and '
             ORDER BY art_order.pos
         ) AS name_string,
-        list (art_debut) AS debuts
+        any_value(art_debut) AS art_debut
     FROM artist_base ab
     GROUP BY
         id_songs
@@ -79,45 +46,18 @@ TABLE IF NOT EXISTS new_artists AS (
 
 CREATE temp
 TABLE IF NOT EXISTS new_songs AS (
-    WITH
-        cte AS (
-            SELECT id_song, name_string
-            FROM
-                song_base sb,
-                unnest (sb.artists) AS u (art)
-                JOIN artist_base ab ON LIST_CONTAINS (ab.name_parts, u.art)
-            GROUP BY
-                name_string
-        )
-    SELECT string_agg (
-            name_string, '|'
-            ORDER BY art_debut
-        )
-) CREATE temp
-TABLE IF NOT EXISTS new_songs AS (
-    SELECT id_song AS id, song AS title, list (name_parts) OVER (
-            PARTITION BY
-                art_pos.song
-            ORDER BY art_pos.pos
-        )
+    SELECT
+        id_song AS id,
+        song AS title,
+        string_agg (DISTINCT name_string, '|') AS artists
     FROM
-        new_artists na,
-        unnest (ab.art_order) AS u (art_pos)
-        JOIN song_base sb ON art_pos.song = sb.id_song
+        song_base sb,
+        unnest (sb.artists) AS u (art)
+        JOIN new_artists na ON LIST_CONTAINS (na.name_parts, u.art)
+    GROUP BY
+        id_song,
+        song
 );
-
--- CREATE TABLE IF NOT EXISTS new_songs AS (
---     SELECT
---         id_song,
---         ANY_VALUE(song) AS title_song,
---         LIST (name) AS artist_song,
---         ANY_VALUE(debut) AS debut_song,
---     FROM
---         artist_base ab
---         JOIN song_base sb ON LIST_CONTAINS (ab.song_ids, sb.id_song)
---     GROUP BY
---         id_song
--- );
 
 -- SELECT row_number() OVER (
 --         PARTITION BY
