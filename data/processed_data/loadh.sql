@@ -1,5 +1,4 @@
-CREATE TEMP
-TABLE IF NOT EXISTS song_base AS (
+CREATE TEMP TABLE IF NOT EXISTS song_base AS (
     SELECT
         song,
         artists,
@@ -23,11 +22,10 @@ create temp table if not exists artist_base as (
     GROUP BY artist
 );
 
-CREATE temp
-TABLE IF NOT EXISTS new_artists AS (
+CREATE TEMP TABLE IF NOT EXISTS new_artists AS (
     SELECT
         row_number() OVER (
-            ORDER BY first (art_debut)
+            ORDER BY FIRST (art_debut)
         ) AS id,
         list (
             artist
@@ -38,19 +36,18 @@ TABLE IF NOT EXISTS new_artists AS (
             ' and '
             ORDER BY art_order.pos
         ) AS name_string,
-        any_value(art_debut) AS art_debut
+        any_value (art_debut) AS art_debut
     FROM artist_base ab
     GROUP BY
         id_songs
 );
 
-CREATE temp
-TABLE IF NOT EXISTS new_songs AS (
+CREATE TEMP TABLE IF NOT EXISTS new_songs AS (
     SELECT
         id_song AS id,
         song AS title,
         string_agg (DISTINCT name_string, '|') AS artists,
-        any_value(debut) AS debut
+        any_value (debut) AS debut
     FROM
         song_base sb,
         unnest (sb.artists) AS u (art)
