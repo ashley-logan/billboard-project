@@ -1,11 +1,12 @@
 WITH
     scored_table AS (
         SELECT 
-            records.id_song,
-            SUM(1.0 / CAST(records.position AS FLOAT)) AS p_score,
-            SUM(101 - records.position) AS l_score,
-            SUM(1.0 / LN(CAST(records.position AS FLOAT) + 1.0)) AS _score
-        FROM records
+            id_song,
+            SUM(1.0 / CAST(.position AS FLOAT)) AS p_score,
+            SUM(101 - position) AS l_score,
+            SUM(1.0 / LN(CAST(position AS FLOAT) + 1.0)) AS _score
+        FROM charts
+        WHERE date >= start_date AND date <= end_date
         GROUP BY
             records.id_song
     ),
