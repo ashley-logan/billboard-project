@@ -1,8 +1,7 @@
 import asyncio
 import yaml
-import os
-from src.etl import extract, transform, load
-from src.utils import date_range_to_scrape, RAW_PATH
+from hot100_pkg.etl import extract, transform, load
+from hot100_pkg.utils import date_range_to_scrape, RAW_PATH
 
 
 with open("configs/config_etl.yaml") as f:
@@ -17,5 +16,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # asyncio.run(main())
-    print(os.getcwd())
+    asyncio.run(main())

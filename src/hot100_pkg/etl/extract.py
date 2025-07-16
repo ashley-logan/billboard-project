@@ -4,7 +4,7 @@ import time
 import pyarrow
 import polars as pl
 from typing import Generator
-from src.utils import (
+from hot100_pkg.utils import (
     ThrottledClient,
     HTMLTargetParser,
     round_date,
@@ -110,7 +110,7 @@ def dump_parquet(data: list[list], raw_data_path):
 
 async def extract(
     client_config: dict,
-    parser_config: dict,
+    parser_config: dict
     date_range: list[dt.date],
     raw_data_path: str,
 ):

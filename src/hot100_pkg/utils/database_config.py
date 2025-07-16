@@ -1,9 +1,9 @@
 import duckdb
 from pathlib import Path
-from datetime import date
+from datetime import datetime, date
 
 OLDEST_RECORD_DATE: date = date(1958, 8, 4)
-root_dir = Path(__file__).parent.parent
+root_dir = Path(__file__).parent.parent.parent.parent
 relative_db_path = root_dir / "data" / "processed_data" / "chart-analytics.db"
 DB_PATH = relative_db_path.resolve()
 relative_raw_path = root_dir / "data" / "raw_data"
@@ -36,6 +36,10 @@ def date_range_to_scrape() -> list[date]:
             except AttributeError:
                 dates.append(_date)
         return dates
+
+
+def get_curr_date():
+    return datetime.now().date()
 
 
 def get_db_conn():

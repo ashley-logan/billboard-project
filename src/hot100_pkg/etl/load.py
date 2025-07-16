@@ -1,7 +1,7 @@
 import polars as pl
 from datetime import date
 from pathlib import Path
-from src.utils import get_db_conn
+from hot100_pkg.utils import get_db_conn
 
 
 def load(clean_df: pl.DataFrame):

@@ -118,12 +118,12 @@ def clean_base_table(lf) -> pl.LazyFrame:
     )
 
 
-def transform(load_path) -> dict[str, pl.DataFrame]:
+def transform(load_path) -> pl.DataFrame:
     base_table: pl.LazyFrame = load_data(load_path)
     return base_table.pipe(clean_base_table).collect()
 
 
-if __name__ == "__main__":
-    ROOT_DIR: Path = Path(__file__).parent.parent
-    path = ROOT_DIR / "data" / "raw_data" / "raw-data_06-22.parquet"
-    tbls_dict = transform(load_path=path)
+# if __name__ == "__main__":
+#     ROOT_DIR: Path = Path(__file__).parent.parent
+#     path = ROOT_DIR / "data" / "raw_data" / "raw-data_06-22.parquet"
+#     tbls_dict = transform(load_path=path)
