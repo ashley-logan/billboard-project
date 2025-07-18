@@ -4,9 +4,16 @@ import dash_mantine_components as dmc
 from dash import Dash, html, Input, Output, callback, dcc
 
 from hot100_pkg.utils import DB_PATH, OLDEST_RECORD_DATE, get_curr_date
-from hot100_pkg.app import filter_charts
 
 CURR_DATE = get_curr_date()
+db_conn = duckdb.connect(database=DB_PATH, read_only=True)
+
+formulas: dict[str, str] = {
+    "pop_rank": "SUM(1.0 / LN(position::FLOAT + 1.0))",
+    "pow_rank": "SUM(1.0 / position::FLOAT)",
+    "long_rank": "SUM(101 - position)",
+}
+
 
 app = Dash(__name__)
 
@@ -44,6 +51,8 @@ app.layout = dmc.MantineProvider(
                 ),
                 dmc.Tabs(
                     id="chart-tabs",
+                    value="pop_rank",
+                    variant="outline",
                     children=[
                         dmc.TabsList(
                             [
@@ -52,11 +61,12 @@ app.layout = dmc.MantineProvider(
                                 dmc.TabsTab("Longevity Ranking", value="long_rank"),
                             ]
                         ),
+                        dmc.Stack(
+                            children=[
+                                dag.AgGrid(id="table1", rowData=[], columnDefs=[])
+                            ]
+                        ),
                     ],
-                    value="pop_rank",
-                ),
-                dag.AgGrid(
-                    id="table1",
                 ),
             ]
         )
@@ -85,9 +95,23 @@ def update_maxDate(end_date):
     Input("date1", "value"),
     Input("date2", "value"),
 )
-def update_table1(rank_option, start_date, end_date):
-    df = fetch_dataframe(rank_by=rank_option, min_date=start_date, max_date=end_date)
-    return ...
+def update_table1(rank_option, start_date, end_date, limit=50):
+    query = f"""
+        SELECT
+        ROW_NUMBER() OVER(ORDER BY {formulas[rank_option]} DESC) AS rank,
+        song AS title,
+        artists,
+        min(date) AS debut
+        FROM charts
+        WHERE date >= ? AND date <= ?
+        GROUP BY song, artists
+        ORDER BY rank
+        LIMIT ?
+        """
+    df = db_conn.execute(query, [start_date, end_date, limit]).pl()
+    rows = df.to_dicts()
+    col_defs = [{"field": col} for col in df.columns]
+    return rows, col_defs
 
 
 if __name__ == "__main__":

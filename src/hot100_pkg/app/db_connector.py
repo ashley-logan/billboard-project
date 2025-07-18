@@ -1,18 +1,6 @@
 import polars as pl
 from hot100_pkg.utils import get_db_conn, get_curr_date, OLDEST_RECORD_DATE
 
-CURR_DATE = get_curr_date()
-con = get_db_conn()
-charts_df = con.execute(
-    """
-SELECT ns.id, c.*
-FROM charts c
-JOIN new_songs ns ON c.song = ns.title
-"""
-).pl()
-
-con.close()
-
 
 def filter_charts(
     limit: int = 10, start_date=OLDEST_RECORD_DATE, end_date=CURR_DATE

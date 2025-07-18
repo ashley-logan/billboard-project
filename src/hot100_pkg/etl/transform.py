@@ -118,6 +118,30 @@ def clean_base_table(lf) -> pl.LazyFrame:
     )
 
 
+def derive_song_base(lf) -> pl.LazyFrame:
+    return (
+        lf.group_by(["song", "artists"])
+        .agg(debut=pl.min("date"))
+        .sort(by="debut")
+        .with_row_index(name="id")
+        .select(id="id", title="song", artists="artists")
+    )
+
+
+def derive_artist_base(lf) -> pl.LazyFrame:
+    unnested = lf.explode("artists")
+    return (
+        unnested.group_by("artists", maintain_order=True)
+        .agg(id_songs=pl.col("id"), art_debut=pl.min("debut"))
+        .group_by("id_songs")
+        .agg(
+            name_parts=pl.col("artists"),
+            name_str=pl.col("artists").str.concat(" and "),
+            art_debut=pl.col("art_debut").any_value(),
+        )
+    )
+
+
 def transform(load_path) -> pl.DataFrame:
     base_table: pl.LazyFrame = load_data(load_path)
     return base_table.pipe(clean_base_table).collect()

@@ -40,7 +40,3 @@ def date_range_to_scrape() -> list[date]:
 
 def get_curr_date():
     return datetime.now().date()
-
-
-def get_db_conn():
-    return duckdb.connect(database=DB_PATH)
