@@ -43,11 +43,11 @@ CREATE TABLE IF NOT EXISTS new_songs AS (
     SELECT
         sb.id AS id,
         sb.song AS title,
-        STRING_AGG (DISTINCT na.name_string, '|') AS artists,
+        LIST (DISTINCT na.name_string) AS artists,
         ANY_VALUE(sb.debut) AS debut
     FROM
-        song_base sb,
-        unnest (sb.artists) AS u (art)
+        charts c,
+        UNNEST(c.artists) AS u art)
         JOIN new_artists na ON LIST_CONTAINS (na.name_parts, u.art)
     GROUP BY
         sb.id,

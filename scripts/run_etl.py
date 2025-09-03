@@ -9,10 +9,8 @@ with open("configs/config_etl.yaml") as f:
 
 
 async def main():
-    date_range = date_range_to_scrape()
-    await extract(configs["Client"], configs["Parser"], date_range, RAW_PATH)
-    clean_df = transform(load_path=RAW_PATH)
-    load(clean_df)
+    await extract(configs["Client"], configs["Parser"], date_range_to_scrape(), RAW_PATH)
+    load(transform(RAW_PATH))
 
 
 if __name__ == "__main__":
