@@ -1,6 +1,6 @@
 import asyncio
 import datetime as dt
-import time
+import timesource
 import pyarrow
 import polars as pl
 from typing import Generator
