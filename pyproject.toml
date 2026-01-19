@@ -16,7 +16,6 @@ dependencies = [
     "httpx-retries>=0.4.0",
     "lxml>=5.4.0",
     "pathlib>=1.0.1",
-    "polars[pyarrow]>=1.30.0",
     "pyyaml>=6.0.2",
     "tool>=0.8.0",
     "typing>=3.10.0.0",

@@ -1,7 +1,7 @@
 import asyncio
 import datetime as dt
-import timesource
-import pyarrow
+from datetime import date, timedelta
+import time
 import polars as pl
 from typing import Generator
 from hot100_pkg.utils import (
