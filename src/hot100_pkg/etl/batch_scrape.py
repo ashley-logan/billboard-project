@@ -5,17 +5,15 @@ import asyncio
 OLDEST_RECORD_DATE: date = date(1958, 8, 4)
 
 CSS_SELECTORS = {
-    "title": """
-    div.o-chart-results-list-row-container:nth-child(1) > 
+    "title": lambda x: f"""
+    div.o-chart-results-list-row-container:nth-child({x}) > 
     ul:nth-child(1) > li:nth-child(4) > ul:nth-child(1) > 
     li:nth-child(1) > h3:nth-child(1)
     """,
-    "artist": """
-    div.o-chart-results-list-row-container:nth-child(1) > 
+    "artist": lambda x: f"""
+    div.o-chart-results-list-row-container:nth-child({x}) > 
     ul:nth-child(1) > li:nth-child(4) > ul:nth-child(1) > 
     li:nth-child(1) > span:nth-child(2)
-    """,
-    "position": """
     """,
 }
 
@@ -39,9 +37,18 @@ def into_saturday(day: date) -> date:
     return day
 
 
+def date_generator(start_date: date, end_date: date):
+    # infintite generator for dates that takes the timedelta as a paramater
+    curr = start_date
+    while curr <= end_date:
+        yield curr
+        curr += timedelta(days=7)
+
+
 def batch_extract():
     start: date = OLDEST_RECORD_DATE
     end: date = into_saturday(date.today())
+    dates = date_generator(start, end)
 
 
 """

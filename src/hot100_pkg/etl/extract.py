@@ -1,25 +1,40 @@
 import asyncio
-import datetime as dt
 from datetime import date, timedelta
 import time
 import polars as pl
-from typing import Generator
-from hot100_pkg.utils import (
-    ThrottledClient,
-    HTMLTargetParser,
-    round_date,
-)
+from typing import Generator, Callable
+import httpx
+from selectolax.parser import HTMLParser
+from hot100_pkg.utils import ThrottledClient, HTMLTargetParser
 
 
-@round_date
-def date_generator(
-    start_date: dt.date, end_date: dt.date, delta: int = 1
-) -> Generator[dt.date, None, None]:
+def get_selectors(num: int) -> tuple[str, str]:
+    return (
+        f"""
+    div.o-chart-results-list-row-container:nth-child({num}) > 
+    ul:nth-child(1) > li:nth-child(4) > ul:nth-child(1) > 
+    li:nth-child(1) > h3:nth-child(1)
+    """,
+        f"""
+    div.o-chart-results-list-row-container:nth-child({num}) > 
+    ul:nth-child(1) > li:nth-child(4) > ul:nth-child(1) > 
+    li:nth-child(1) > span:nth-child(2)
+    """,
+    )
+
+
+def into_saturday(day: date) -> date:
+    while day.weekday() != 5:
+        day -= timedelta(days=1)
+    return day
+
+
+def date_generator(start_date: date, end_date: date):
     # infintite generator for dates that takes the timedelta as a paramater
     curr = start_date
     while curr <= end_date:
         yield curr
-        curr += dt.timedelta(weeks=delta)
+        curr += timedelta(days=7)
 
 
 async def clean_worker(num: int, queue2: asyncio.Queue) -> list[dict[int, str]]:
@@ -70,19 +85,28 @@ async def scrape_worker(
     await queue2.put(None)
 
 
-# testing parser feed() and read_events() methods
+async def parse_html(r_bytes: bytes) -> list[tuple[str, str]]:
+    chart_data = []
+    tree: HTMLParser = HTMLParser(r_bytes)
+    for i in range(1, 101):
+        title_selector, artist_selector = get_selectors(i)
+        chart_data.append(
+            (
+                tree.css_first(title_selector).text(),
+                tree.css_first(artist_selector).text(),
+            )
+        )
+    return chart_data
+
+
 async def html_driver(
-    date: dt.datetime, tail_url: str, client: ThrottledClient, parser_config: dict
-) -> list[list[str]]:
-    parser = HTMLTargetParser(parser_config)
+    date: date, tail_url: str, client: ThrottledClient
+) -> list[tuple[str, str]]:
+    data = []
     async with client.stream("GET", tail_url) as response:
-        async for chunk in response.aiter_text():
-            parser.feed(chunk)
-            if parser.at_quota:
-                break
-    data: list[list] = parser.get_data()
+        data = parse_html(response.content)
     print(f"parsed data from {date.isoformat()}")
-    return [[date] + row for row in data]
+    return data
 
 
 async def url_producer(dates: Generator, queue1: asyncio.Queue):
