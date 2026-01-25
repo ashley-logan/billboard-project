@@ -1,19 +1,23 @@
 import asyncio
-import yaml
-from hot100_pkg.etl import extract, transform, load
-from hot100_pkg.utils import date_range_to_scrape, RAW_PATH
+from platformdirs import PlatformDirs
+import json
+import os
+from hot100_pkg.etl import extract, write_db
+
+dirs = PlatformDirs("BillboardRepo")
+cache_dir = dirs.user_cache_dir
 
 
-with open("configs/config_etl.yaml") as f:
-    configs = yaml.safe_load(f)
-
-
-async def main():
-    await extract(
-        configs["Client"], configs["Parser"], date_range_to_scrape(), RAW_PATH
-    )
-    # load(transform(RAW_PATH))
+def main():
+    if os.path.isdir(cache_dir):
+        # check most recent scrape date
+        pass
+    else:
+        # scrape all records
+        pass
+    new_date, data = asyncio.run(extract())
+    write_db(data)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -19,6 +19,7 @@ class Charts(Base):
 class Entries(Base):
     __tablename__ = "entries"
 
+    id = Column(Integer, primary_key=True)
     position = Column(Integer, primary_key=True, autoincrement=False)
     chart_id = Column(Integer, ForeignKey("charts.id"))
     title = Column(String, nullable=False, unique=True)

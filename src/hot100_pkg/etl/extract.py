@@ -1,10 +1,11 @@
 import asyncio
 from datetime import date, timedelta
 import time
+import json
 from typing import Iterator
 from httpx import AsyncClient, Response
 from selectolax.parser import HTMLParser
-from hot100_pkg.etl import Charts, Entries
+from .database import Charts, Entries
 
 # from hot100_pkg.utils import ThrottledClient, HTMLTargetParser
 
@@ -48,19 +49,17 @@ def date_generator(start_date: date, end_date: date) -> Iterator[date]:
         curr += timedelta(days=7)
 
 
-async def clean_worker(
-    num: int, queue2: asyncio.Queue
-) -> list[tuple[date, list[Entries]]]:
+async def clean_worker(num: int, queue2: asyncio.Queue) -> list[Charts]:
     i = 0
-    resulting_data: list[tuple[date, list[Entries]]] = []
+    charts_list: list[Charts] = []
     while True:
-        chart_data: tuple[date, list[Entries]] | None = await queue2.get()
+        chart_data: Charts | None = await queue2.get()
         if chart_data is None:
             break
-        resulting_data.append(chart_data)
+        charts_list.append(chart_data)
         i += 1
         print(f"cleaned chart {i} in worker {num}")
-    return resulting_data
+    return charts_list
 
 
 # async def clean(
@@ -81,23 +80,27 @@ async def scrape_worker(
     queue1: asyncio.Queue,
     queue2: asyncio.Queue,
     client: AsyncClient,
+    sem: asyncio.Semaphore,
 ):
     i: int = 0
     while True:
         item: tuple[date, str] | None = await queue1.get()
         if item is None:
             break
-        _date, tail_url = item
-        r: Response = await client.get(tail_url)
-        chart_arr: list[Entries] = await parse_html(r.content)
-        await queue2.put((_date, chart_arr))
+        date_, tail_url = item
+        print(f"awaiting response from {tail_url}")
+        async with sem:
+            r: Response = await client.get(tail_url)
+        charts: Charts = await parse_html(r.content, date_)
+        await queue2.put(charts)
         i += 1
-        print(f"succesfully queued raw data {i} in worker {num}")
-    await queue2.put(None)
+        print(f"succesfully queued chart data {i} in worker {num}")
+    for _ in range(10):
+        await queue2.put(None)
 
 
-async def parse_html(r_bytes: bytes) -> list[Entries]:
-    chart_arr: list[Entries] = []
+async def parse_html(r_bytes: bytes, date_: date) -> Charts:
+    entries: list[Entries] = []
     tree: HTMLParser = HTMLParser(r_bytes)
     num: int = 1
     while True:
@@ -109,7 +112,7 @@ async def parse_html(r_bytes: bytes) -> list[Entries]:
             tree.css_first(artist_css),
         )
         if position and title and artist:
-            chart_arr.append(
+            entries.append(
                 Entries(
                     position=int(position.text(strip=True)),
                     title=title.text(strip=True)
@@ -118,10 +121,11 @@ async def parse_html(r_bytes: bytes) -> list[Entries]:
                     artist=artist.text(strip=True),
                 )
             )
-        if len(chart_arr) >= 100:
+        if len(entries) >= 100:
             break
         num += 1
-    return chart_arr
+    chart: Charts = Charts(name="Hot 100", date=date_, entries=entries)
+    return chart
 
 
 async def url_producer(dates: Iterator[date], queue1: asyncio.Queue):
@@ -147,28 +151,35 @@ async def url_producer(dates: Iterator[date], queue1: asyncio.Queue):
 #     print(f"wrote parquet file to {parquet_path}")
 
 
-async def extract() -> list[list[tuple[date, list[Entries]]]]:
+async def extract(cache: str) -> list[Charts]:
     start: float = time.time()
     queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
     queue2: asyncio.Queue = asyncio.Queue()
     client: AsyncClient = AsyncClient(
-        base_url="https://www.billboard.com/charts/hot-100/"
+        base_url="https://www.billboard.com/charts/hot-100/", timeout=5.0
     )
+    sem: asyncio.Semaphore = asyncio.Semaphore(10)
+    new_date: date = into_saturday(date.today())
     async with asyncio.TaskGroup() as tg:
-        dates: Iterator[date] = date_generator(
-            OLDEST_RECORD_DATE, into_saturday(date.today())
-        )
+        dates: Iterator[date] = date_generator(OLDEST_RECORD_DATE, new_date)
         tg.create_task(url_producer(dates, queue1))
-        for i in range(50):
-            tg.create_task(scrape_worker(i, queue1, queue2, client))
+        for i in range(10):
+            tg.create_task(scrape_worker(i, queue1, queue2, client, sem))
         tasks = [tg.create_task(clean_worker(i, queue2)) for i in range(10)]
-    client.aclose()
-    return [t.result() for t in tasks]
+    await client.aclose()
+    print(f"extract completed in {time.time() - start} seconds")
+    with open(cache, "r+") as f:
+        c = json.load(f)
+        c["last_chart"] = new_date
+        json.dump(c, f, indent=4)
+    results: list[Charts] = []
+    for t in tasks:
+        results += t.result()
+    return results
 
     # dump_parquet([row for batch in batches for row in batch.result()], raw_data_path)
-    print(f"script finished in {time.time() - start} seconds")
 
 
-if __name__ == "__main__":
-    r = asyncio.run(extract())
-    print(r)
+# if __name__ == "__main__":
+#     r = asyncio.run(extract())
+#     print(r)
