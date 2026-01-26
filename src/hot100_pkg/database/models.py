@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 class Charts(Base):
     __tablename__ = "charts"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=False)
     date = Column(DateTime, nullable=False, unique=True)
 
@@ -19,10 +19,10 @@ class Charts(Base):
 class Entries(Base):
     __tablename__ = "entries"
 
-    id = Column(Integer, primary_key=True)
-    position = Column(Integer, primary_key=True, autoincrement=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    position = Column(Integer, nullable=False)
     chart_id = Column(Integer, ForeignKey("charts.id"))
-    title = Column(String, nullable=False, unique=True)
-    artist = Column(String, nullable=False, unique=False)
+    title = Column(String, nullable=False)
+    artist = Column(String, nullable=False)
 
     charts = relationship("Charts", back_populates="entries")

@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date, timedelta
 import time
+import re
 from typing import Iterator
 from httpx import AsyncClient, Response
 from selectolax.parser import HTMLParser
@@ -37,16 +38,16 @@ def date_generator(start_date: date, end_date: date) -> Iterator[date]:
         curr += timedelta(days=7)
 
 
-async def clean_worker(num: int, queue2: asyncio.Queue) -> list[Charts]:
-    i = 0
+async def clean_worker(queue2: asyncio.Queue, num_workers: int) -> list[Charts]:
+    i: int = 0
     charts_list: list[Charts] = []
-    while True:
+    while i < num_workers:
         chart_data: Charts | None = await queue2.get()
+        print("pulled from queue2 ", i)
         if chart_data is None:
-            break
+            i += 1
+            continue
         charts_list.append(chart_data)
-        i += 1
-        print(f"cleaned chart {i} in worker {num}")
     return charts_list
 
 
@@ -57,19 +58,20 @@ async def scrape_worker(
     client: AsyncClient,
 ):
     i: int = 0
+    print(f"Worker #{num} started")
     while True:
         item: tuple[date, str] | None = await queue1.get()
         if item is None:
             break
         date_, tail_url = item
-        print(f"awaiting response from {tail_url}")
         r: Response = await client.get(tail_url)
         charts: Charts = await parse_html(r.content, date_)
+        print(f"putting #{i} into queue2")
         await queue2.put(charts)
+        print(f"successfully put #{i} into queue2")
         i += 1
-        print(f"succesfully queued chart data {i} in worker {num}")
-    for _ in range(15):
-        await queue2.put(None)
+    print(f"Worker #{num} done; {i} charts parsed")
+    await queue2.put(None)
 
 
 async def parse_html(r_bytes: bytes, date_: date) -> Charts:
@@ -84,14 +86,16 @@ async def parse_html(r_bytes: bytes, date_: date) -> Charts:
             tree.css_first(title_css),
             tree.css_first(artist_css),
         )
+
         if position and title and artist:
+            artist_txt = re.sub(r"(?<! )[aA]nd", " And", artist.text(strip=True))
             entries.append(
                 Entries(
                     position=int(position.text(strip=True)),
                     title=title.text(strip=True)
                     .replace("RE-\nENTRY", "")
                     .replace("NEW", ""),
-                    artist=artist.text(strip=True),
+                    artist=artist_txt,
                 )
             )
         if len(entries) >= 100:
@@ -120,20 +124,19 @@ async def extract(
     queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
     queue2: asyncio.Queue = asyncio.Queue()
     client: AsyncClient = AsyncClient(
-        base_url="https://www.billboard.com/charts/hot-100/", timeout=5.0
+        base_url="https://www.billboard.com/charts/hot-100/", timeout=10.0
     )
     async with asyncio.TaskGroup() as tg:
         dates: Iterator[date] = date_generator(start_date, end_date)
         tg.create_task(url_producer(dates, queue1))
         for i in range(15):
-            tg.create_task(scrape_worker(i, queue1, queue2, client))
-        tasks = [tg.create_task(clean_worker(i, queue2)) for i in range(15)]
+            tg.create_task(scrape_worker(i + 1, queue1, queue2, client))
+        result_task = tg.create_task(clean_worker(queue2, 15))
+
     await client.aclose()
     print(f"extract completed in {time.time() - start_time} seconds")
-    results: list[Charts] = []
-    for t in tasks:
-        results += t.result()
-    return results, end_date
+
+    return result_task.result(), end_date
 
 
 # if __name__ == "__main__":
