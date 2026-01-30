@@ -1,17 +1,28 @@
 import asyncio
 from datetime import date, timedelta
 import time
+import json
 import re
+from pathlib import Path
 from typing import Iterator
 from httpx import AsyncClient, Response
-from selectolax.parser import HTMLParser
+from aiohttp import ClientSession, TCPConnector
+from selectolax.parser import HTMLParser, Node
 from hot100_pkg.database import Charts, Entries
-from hot100_pkg.utils import to_saturday
+from hot100_pkg.utils import (
+    to_saturday,
+    AsyncCounter,
+    calc_num_charts,
+    progress_report,
+    retry_middleware,
+)
+
+LOG_DIR = Path(__file__).parents[3] / "logs"
 
 
 def get_selectors(num: int) -> tuple[str, str, str]:
     # returns css selectors for:
-    #   chart position, song title, artist
+    #   chart position, title, artist
     return (
         f"""
         div.o-chart-results-list-row-container:nth-child({num}) > 
@@ -32,110 +43,113 @@ def get_selectors(num: int) -> tuple[str, str, str]:
 
 def date_generator(start_date: date, end_date: date) -> Iterator[date]:
     # infintite generator for dates incremented by one week
-    curr: date = start_date
-    while curr <= end_date:
-        yield curr
-        curr += timedelta(days=7)
+    date_ = start_date
+    while date_ <= end_date:
+        yield date_
+        date_ += timedelta(days=7)
 
 
-async def clean_worker(queue2: asyncio.Queue, num_workers: int) -> list[Charts]:
+async def url_producer(dates: Iterator[date], queue1: asyncio.Queue, chart_name: str):
+    for i, _date in enumerate(dates, start=1):
+        tail_url: str = f"{chart_name}/{_date.strftime('%Y-%m-%d')}/"
+        await queue1.put((i, _date, tail_url))
+    for _ in range(15):
+        await queue1.put(None)
+
+
+async def clean_worker(
+    chart_name: str, queue2: asyncio.Queue, num_workers: int
+) -> list[Charts]:
     i: int = 0
     charts_list: list[Charts] = []
     while i < num_workers:
         chart_data: Charts | None = await queue2.get()
-        print("pulled from queue2 ", i)
         if chart_data is None:
             i += 1
-            continue
-        charts_list.append(chart_data)
+        else:
+            chart_data.name = chart_name
+            charts_list.append(chart_data)
+        queue2.task_done()
     return charts_list
 
 
 async def scrape_worker(
     num: int,
+    counter: AsyncCounter,
     queue1: asyncio.Queue,
     queue2: asyncio.Queue,
-    client: AsyncClient,
+    client: ClientSession,
 ):
-    i: int = 0
-    print(f"Worker #{num} started")
     while True:
-        item: tuple[date, str] | None = await queue1.get()
+        item: tuple[int, date, str] | None = await queue1.get()
         if item is None:
             break
-        date_, tail_url = item
-        r: Response = await client.get(tail_url)
-        charts: Charts = await parse_html(r.content, date_)
-        print(f"putting #{i} into queue2")
+        chart_num, date_, tail_url = item
+        async with client.get(tail_url) as r:
+            r.raise_for_status()
+            r_body: str = await r.text(encoding="utf-8")
+        charts: Charts = await parse_html(r_body, date_)
+        queue1.task_done()
+        await counter.add()
         await queue2.put(charts)
-        print(f"successfully put #{i} into queue2")
-        i += 1
-    print(f"Worker #{num} done; {i} charts parsed")
     await queue2.put(None)
 
 
-async def parse_html(r_bytes: bytes, date_: date) -> Charts:
+async def parse_html(r_body: str, date_: date) -> Charts:
     entries: list[Entries] = []
-    tree: HTMLParser = HTMLParser(r_bytes)
-    num: int = 1
+    tree: HTMLParser = HTMLParser(r_body)
+    chart_num: int = 1
     while True:
-        position_css, title_css, artist_css = get_selectors(num)
+        position_tag, title_tag, artist_tag = [
+            tree.css_first(s) for s in get_selectors(chart_num)
+        ]
+        if position_tag and title_tag and artist_tag:
+            attrs = {
+                "position": int(position_tag.text(strip=True)),
+                "artist": re.sub(r"(?<! )[aA]nd", " And", artist_tag.text(strip=True)),
+                "title": title_tag.text(strip=True)
+                .replace("RE-\nENTRY", "")
+                .replace("NEW", ""),
+            }
 
-        position, title, artist = (
-            tree.css_first(position_css),
-            tree.css_first(title_css),
-            tree.css_first(artist_css),
-        )
+            entries.append(Entries(**attrs))
 
-        if position and title and artist:
-            artist_txt = re.sub(r"(?<! )[aA]nd", " And", artist.text(strip=True))
-            entries.append(
-                Entries(
-                    position=int(position.text(strip=True)),
-                    title=title.text(strip=True)
-                    .replace("RE-\nENTRY", "")
-                    .replace("NEW", ""),
-                    artist=artist_txt,
-                )
-            )
-        if len(entries) >= 100:
-            break
-        num += 1
-    chart: Charts = Charts(name="Hot 100", date=date_, entries=entries)
+            if attrs["position"] == 100:
+                break
+
+        chart_num += 1
+
+    chart: Charts = Charts(date=date_, entries=entries)
     return chart
 
 
-async def url_producer(dates: Iterator[date], queue1: asyncio.Queue):
-    for _date in dates:
-        tail_url: str = f"{_date.strftime('%Y-%m-%d')}/"
-        await queue1.put((_date, tail_url))
-    for _ in range(15):
-        await queue1.put(None)
-
-
 async def extract(
-    start_date: date, end_date: date | None = None
+    chart_name: str, start_date: date, end_date: date | None = None
 ) -> tuple[list[Charts], date]:
     if not end_date:
         end_date = date.today()
     end_date = to_saturday(end_date)
 
     start_time: float = time.time()
+    total_charts: int = calc_num_charts(start_date, end_date)
     queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
     queue2: asyncio.Queue = asyncio.Queue()
-    client: AsyncClient = AsyncClient(
-        base_url="https://www.billboard.com/charts/hot-100/", timeout=10.0
+    counter: AsyncCounter = AsyncCounter(stop_at=total_charts)
+    client: ClientSession = ClientSession(
+        base_url="https://www.billboard.com/charts/",
+        middlewares=[retry_middleware],
+        connector=TCPConnector(limit=30),
     )
     async with asyncio.TaskGroup() as tg:
         dates: Iterator[date] = date_generator(start_date, end_date)
-        tg.create_task(url_producer(dates, queue1))
-        for i in range(15):
-            tg.create_task(scrape_worker(i + 1, queue1, queue2, client))
-        result_task = tg.create_task(clean_worker(queue2, 15))
+        tg.create_task(progress_report(total_charts, counter))
+        tg.create_task(url_producer(dates, queue1, chart_name))
+        for i in range(5):
+            tg.create_task(scrape_worker(i + 1, counter, queue1, queue2, client))
+        result_task = tg.create_task(clean_worker(chart_name, queue2, 5))
 
-    await client.aclose()
+    await client.close()
     print(f"extract completed in {time.time() - start_time} seconds")
-
     return result_task.result(), end_date
 
 
