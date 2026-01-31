@@ -30,7 +30,7 @@ class AsyncCounter:
             # remain active while count is less than stop_at
             self.is_active = self.count < self.stop_at
 
-    async def get(self):
+    async def get(self) -> int:
         async with self.lock:
             return self.count
 

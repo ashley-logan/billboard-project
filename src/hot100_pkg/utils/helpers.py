@@ -45,9 +45,9 @@ def calc_num_charts(start_date: date, end_date: date) -> int:
 async def progress_report(num_charts: int, counter: AsyncCounter):
     start_time: float = time.time()
     while counter.is_active:
-        c = await counter.get()
+        count: int = await counter.get()
         print(
-            f"{round(time.time() - start_time, 3)}s -- {c}/{num_charts} charts extracted"
+            f"{round(time.time() - start_time, 3)}s -- {count}/{num_charts} charts extracted"
         )
         await asyncio.sleep(15)
 
