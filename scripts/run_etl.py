@@ -21,9 +21,8 @@ def main():
         else:
             print(f"No newer charts to fetch, most recent chart: {most_recent}")
             return
-    data, newest_chart_date = asyncio.run(extract("hot-100", start_date))
-    # records_added = write_db(data)
-    # update_cache(cache_path, newest_chart_date, records_added)
+    num_charts, newest_chart_date = asyncio.run(extract("hot-100", start_date))
+    update_cache(cache_path, newest_chart_date, num_charts)
 
 
 if __name__ == "__main__":

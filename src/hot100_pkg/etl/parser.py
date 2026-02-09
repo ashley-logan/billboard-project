@@ -1,5 +1,6 @@
-from selectolax.parser import Node
-from hot100_pkg.database import Entries, Charts
+from selectolax.parser import HTMLParser
+from hot100_pkg.database import Entries
+import re
 
 
 def get_selectors(num: int) -> tuple[str, str, str]:
@@ -23,7 +24,8 @@ def get_selectors(num: int) -> tuple[str, str, str]:
     )
 
 
-async def parse_html(tree: Node) -> list[Entries]:
+def parse_html(html_body: str) -> list[Entries]:
+    tree: HTMLParser = HTMLParser(html_body)
     entries: list[Entries] = []
     chart_num: int = 1
     while True:
