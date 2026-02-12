@@ -2,7 +2,6 @@ import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date, timedelta
 import time
-import json
 import random
 from pathlib import Path
 from typing import Iterator
