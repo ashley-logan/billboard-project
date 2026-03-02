@@ -113,8 +113,3 @@ async def extract(
 
     print(f"{num_charts} extracted in {time.time() - start_time} seconds")
     return num_charts, end_date
-
-
-# if __name__ == "__main__":
-#     r = asyncio.run(extract())
-#     print(r)

@@ -2,13 +2,10 @@ import asyncio
 from platformdirs import PlatformDirs
 from datetime import date, timedelta
 import os
-from pathlib import Path
+from .entrypoint import parse_cli
 from hot100_pkg.etl import extract
 from hot100_pkg.database import write_db, DB_PATH
 from hot100_pkg.utils import load_cache, to_saturday, update_cache, OLDEST_RECORD_DATE
-
-dirs = PlatformDirs("BillboardRepo")
-cache_path: Path = Path(dirs.user_cache_path)
 
 
 def main():
@@ -21,6 +18,7 @@ def main():
         else:
             print(f"No newer charts to fetch, most recent chart: {most_recent}")
             return
+
     num_charts, newest_chart_date = asyncio.run(extract("hot-100", start_date))
     update_cache(cache_path, newest_chart_date, num_charts)
 

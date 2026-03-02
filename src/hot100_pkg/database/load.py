@@ -1,14 +1,24 @@
-from sqlalchemy import create_engine
+import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, inspect, select, func, DateTime, Row
 from sqlalchemy.orm import Session
 from .models import Charts, Base
-from pathlib import Path
 from asyncio import Queue, QueueEmpty
 
-DB_PATH: Path = Path(__file__).resolve().parents[3] / "data" / "dev.db"
+
+load_dotenv()
+
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_PORT = os.getenv("POSTGRES_PORT")
+
+DB_URI = f"postgres+psycopg:///{DB_USER}:{DB_PASSWORD}@db:{DB_PORT}/{DB_NAME}"
+
+engine = create_engine(DB_URI)
 
 
 def write_db(charts: list[Charts]):
-    engine = create_engine(f"sqlite:///{DB_PATH.resolve().as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         s.add_all(sorted(charts, key=lambda x: x.date))
@@ -27,3 +37,20 @@ def write_batch(queue2: Queue):
             break
     # write charts to the database
     write_db(batch)
+
+
+def get_db_tables() -> list[str]:
+    with Session(engine) as s:
+        inspector = inspect(s.bind)
+        tables = inspector.get_table_names()
+    return tables
+
+
+def read_newest() -> DateTime | None:
+    if len(get_db_tables()) == 0:
+        return None
+    with Session(engine) as s:
+        row: Row | None = s.execute(select(func.max(Charts.date))).first()
+    if row is None:
+        return None
+    return row["date"]

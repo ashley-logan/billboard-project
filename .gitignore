@@ -175,3 +175,7 @@ cython_debug/
 .pypirc
 *.tmp
 *.wal
+
+# Dev files
+exampleDockerfile
+example-docker-compose*
