@@ -1,6 +1,25 @@
-from hot100_pkg.utils import OLDEST_RECORD_DATE
+from hot100_pkg.utils import OLDEST_RECORD_DATE, date_generator
+from hot100_pkg.database import Charts
+from sqlalchemy import create_engine, select, func
+from sqlalchemy.orm import sessionmaker
 from datetime import date, datetime
 import argparse
+import os
+from typing import Iterator, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_PORT = os.getenv("POSTGRES_PORT")
+
+DB_URI = f"postgres+psycopg:///{DB_USER}:{DB_PASSWORD}@db:{DB_PORT}/{DB_NAME}"
+
+engine = create_engine(DB_URI)
+
+Session = sessionmaker(engine)
 
 
 def parse_date(date_arg: str) -> date:
@@ -12,7 +31,7 @@ def parse_date(date_arg: str) -> date:
 
     try:
         value: date = datetime.strptime(date_arg, "%Y-%m-%d").date()
-        if value < OLDEST_RECORD_DATE:
+        if value < OLDEST_RECORD_DATE or value > date.today():
             raise ValueError
         return value
     except ValueError:
@@ -87,10 +106,48 @@ def parse_cli() -> argparse.Namespace:
 
     args = parser.parse_args()
 
+    return args
+
+
+def handle_args(args: argparse.Namespace) -> Iterator[date]:
     if args.command == "fetch-range":
         if args.start > args.end:
-            parser.error("--start cannot be recent than --end")
+            raise argparse.ArgumentError(
+                argument=None, message="--start cannot be recent than --end"
+            )
         if args.start == args.end:
             print("Warning: to parse a single chart use 'fetch --single [YYYY-MM-DD]")
+        dates = date_generator(args.start, args.end)
+    elif args.all:
+        dates = date_generator(OLDEST_RECORD_DATE, date.today())
+    elif args.missing:
+        with Session() as s:
+            existing = s.scalars(select(Charts.date)).all()
+        dates = date_generator(
+            OLDEST_RECORD_DATE, date.today(), lambda x: x not in existing
+        )
+    elif args.new:
+        with Session() as s:
+            newest: Optional[date] = s.scalars(
+                select(func.max(Charts.date))
+            ).one_or_none()
+        if newest is None:
+            raise argparse.ArgumentError(
+                argument=None,
+                message="Cannot pass --new when no charts currently exist in the database.",
+            )
+        dates = date_generator(newest, date.today())
+    elif args.older:
+        with Session() as s:
+            oldest: Optional[date] = s.scalars(
+                select(func.min(Charts.date))
+            ).one_or_none()
+        if oldest is None:
+            raise argparse.ArgumentError(
+                argument=None,
+                message="Cannot pass --older when no charts currently exist in the database.",
+            )
+    elif single_date := args.single:
+        dates = date_generator(single_date, single_date)
 
-    return args
+    return dates

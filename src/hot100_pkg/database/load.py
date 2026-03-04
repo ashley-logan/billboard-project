@@ -1,21 +1,10 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, inspect, select, func, DateTime, Row
+from sqlalchemy import create_engine, inspect, select, func, Row
 from sqlalchemy.orm import Session
 from .models import Charts, Base
 from asyncio import Queue, QueueEmpty
-
-
-load_dotenv()
-
-DB_USER = os.getenv("POSTGRES_USER")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-DB_NAME = os.getenv("POSTGRES_DB")
-DB_PORT = os.getenv("POSTGRES_PORT")
-
-DB_URI = f"postgres+psycopg:///{DB_USER}:{DB_PASSWORD}@db:{DB_PORT}/{DB_NAME}"
-
-engine = create_engine(DB_URI)
+from hot100_pkg.utils import date_generator, to_saturday
 
 
 def write_db(charts: list[Charts]):
@@ -46,11 +35,11 @@ def get_db_tables() -> list[str]:
     return tables
 
 
-def read_newest() -> DateTime | None:
-    if len(get_db_tables()) == 0:
-        return None
-    with Session(engine) as s:
-        row: Row | None = s.execute(select(func.max(Charts.date))).first()
-    if row is None:
-        return None
-    return row["date"]
+# def read_newest() -> DateTime | None:
+#     if len(get_db_tables()) == 0:
+#         return None
+#     with Session(engine) as s:
+#         row: Row | None = s.execute(select(func.max(Charts.date))).first()
+#     if row is None:
+#         return None
+#     return row["date"]

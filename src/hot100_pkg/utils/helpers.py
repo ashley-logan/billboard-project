@@ -12,12 +12,6 @@ from .counter_class import AsyncCounter
 OLDEST_RECORD_DATE: date = date(1958, 8, 2)
 
 
-def to_saturday(date_: date, round_up: bool = False) -> date:
-    delta: int = 1 if round_up else -1
-    while date_.weekday() != 5:
-        date_ += timedelta(days=delta)
-    return date_
-
 
 def load_cache(cache_path: Path) -> dict:
     with open(cache_path, "r") as f:

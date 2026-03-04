@@ -1,14 +1,15 @@
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date, timedelta
+from typing import Iterator, Optional
 import time
 import random
 from pathlib import Path
-from typing import Iterator
 from aiohttp import ClientSession, TCPConnector
 from hot100_pkg.database import Charts, Entries, write_batch
 from hot100_pkg.utils import (
     to_saturday,
+    date_generator,
     AsyncCounter,
     calc_num_charts,
     progress_report,
@@ -17,15 +18,6 @@ from hot100_pkg.utils import (
 from .parser import parse_html
 
 LOG_DIR = Path(__file__).parents[3] / "logs"
-
-
-def date_generator(start_date: date, end_date: date) -> Iterator[date]:
-    # infintite generator for dates incremented by one week
-    date_ = start_date
-    # yield one day per week until end_date is reached
-    while date_ <= end_date:
-        yield date_
-        date_ += timedelta(days=7)
 
 
 async def url_producer(
@@ -43,7 +35,7 @@ async def url_producer(
 async def scrape_worker(
     num: int,
     name: str,
-    counter: AsyncCounter,
+    counter: Optional[AsyncCounter],
     queue1: asyncio.Queue,
     queue2: asyncio.Queue,
     client: ClientSession,
@@ -69,7 +61,7 @@ async def scrape_worker(
         # mark the current url response as parsed/done
         queue1.task_done()
         # increment the parsed charts counter
-        await counter.add()
+        # await counter.add()
         await queue2.put(chart)
         # if 100 charts are waiting to be written to the database, block event loop until batch is written
         if queue2.full():
@@ -78,18 +70,12 @@ async def scrape_worker(
         await asyncio.sleep(random.expovariate(1.0))
 
 
-async def extract(
-    chart_name: str, start_date: date, end_date: date | None = None
-) -> tuple[int, date]:
-    if not end_date:
-        end_date: date = date.today()
-    end_date: date = to_saturday(end_date)
-
+async def extract(chart_name: str, dates: Iterator[date]):
     start_time: float = time.time()
-    total_charts: int = calc_num_charts(start_date, end_date)
+    # total_charts: int = calc_num_charts(start_date, end_date)
     queue1: asyncio.Queue = asyncio.Queue(maxsize=15)
     queue2: asyncio.Queue = asyncio.Queue(maxsize=100)
-    counter: AsyncCounter = AsyncCounter(stop_at=total_charts)
+    # counter: AsyncCounter = AsyncCounter(stop_at=total_charts)
     client: ClientSession = ClientSession(
         base_url="https://www.billboard.com/charts/",
         middlewares=[retry_middleware],
@@ -97,19 +83,18 @@ async def extract(
     )
     pool: ProcessPoolExecutor = ProcessPoolExecutor()
     async with asyncio.TaskGroup() as tg:
-        dates: Iterator[date] = date_generator(start_date, end_date)
-        tg.create_task(progress_report(total_charts, counter))
+        # tg.create_task(progress_report(total_charts, counter))
         tg.create_task(url_producer(dates, queue1, chart_name, 5))
         for i in range(5):
             tg.create_task(
-                scrape_worker(i + 1, chart_name, counter, queue1, queue2, client, pool)
+                scrape_worker(i + 1, chart_name, None, queue1, queue2, client, pool)
             )
 
     await client.close()
     pool.shutdown(wait=True)
     write_batch(queue2)
     queue2.join()
-    num_charts: int = await counter.get()
-
-    print(f"{num_charts} extracted in {time.time() - start_time} seconds")
-    return num_charts, end_date
+    # num_charts: int = await counter.get()
+    print(f"fetching completed in {time.time() - start_time} seconds")
+    # print(f"{num_charts} extracted in {time.time() - start_time} seconds")
+    return

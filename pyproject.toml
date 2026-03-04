@@ -15,7 +15,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.2",
     "selectolax>=0.4.6",
-    "sqlalchemy>=2.0.46",
+    "sqlalchemy[asyncio]>=2.0.46",
     "tool>=0.8.0",
     "typing>=3.10.0.0",
 ]
