@@ -14,7 +14,7 @@ RUN uv sync
 
 COPY . .
 
-ENTRYPOINT [ "uv run", "scripts/entrypoint.py" ]
+ENTRYPOINT [ "python", "./run.py" ]
 
-CMD [ "fetch" ]
+CMD [ "fetch-range", "--start=2022-08-24", "--end=2023-08-24" ]
 
