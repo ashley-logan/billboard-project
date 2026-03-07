@@ -7,4 +7,4 @@ from .counter_class import AsyncCounter
 
 from .date_utils import to_saturday, date_generator
 
-from .parser import create_parser, handle_args
+from .cli_parser import create_parser, handle_args

@@ -1,6 +1,6 @@
 import asyncio
-from hot100_pkg.utils import create_parser, handle_args
-from hot100_pkg.etl import extract
+from app.utils import create_parser, handle_args
+from app.etl import extract
 
 
 def main():

@@ -1,6 +1,6 @@
-from hot100_pkg.utils import date_generator
-from hot100_pkg.configs import OLDEST_CHART_DATE, DB_URI
-from hot100_pkg.database import Charts
+from app.utils import date_generator
+from app.configs import OLDEST_CHART_DATE, DB_URI
+from app.database import Charts
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from datetime import date, datetime, timedelta

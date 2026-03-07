@@ -1,5 +1,5 @@
 from selectolax.parser import HTMLParser
-from hot100_pkg.database import Entries
+from app.database import Entries
 import re
 
 

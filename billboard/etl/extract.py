@@ -5,12 +5,12 @@ from typing import Iterator, Optional
 import time
 import random
 from aiohttp import ClientSession, TCPConnector
-from hot100_pkg.database import Charts, Entries, async_writer
-from hot100_pkg.utils import (
+from app.database import Charts, Entries, async_writer
+from app.utils import (
     AsyncCounter,
     retry_middleware,
 )
-from .parser import parse_html
+from .html_parser import parse_html
 
 
 async def url_producer(

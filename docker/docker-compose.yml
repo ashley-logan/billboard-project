@@ -5,7 +5,7 @@ services:
     container_name: postgres
     restart: always
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -13,12 +13,14 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT}
 
   billboardclient:
-    image: billboard-fetcher-image
-    container_name: billboard-fetcher
     build: 
       context: ../
+    image: billboard-fetcher-image:latest
+    container_name: billboard-fetcher
     depends_on:
       - db
+    entrypoint: ["bash", "-c"]
+    command: "echo dev mode"
     
 
 volumes:

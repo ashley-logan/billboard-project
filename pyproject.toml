@@ -1,28 +1,17 @@
 [project]
-name = "hot100-pkg"
-version = "0.1.0"
-description = "Add your description here"
+name = "billboard-fetch"
+version = "1.0.0"
+description = "cli tool to fetch billboard charts and write to a database"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "aiohttp[speedups]>=3.13.3",
     "asyncio>=3.4.3",
-    "datetime>=5.5",
-    "httpx-retries>=0.4.0",
     "pathlib>=1.0.1",
-    "platformdirs>=4.5.1",
     "psycopg>=3.3.3",
     "python-dotenv>=1.2.1",
-    "pyyaml>=6.0.2",
     "selectolax>=0.4.6",
     "sqlalchemy[asyncio]>=2.0.46",
-    "tool>=0.8.0",
     "typing>=3.10.0.0",
 ]
 
-[build-system]
-requires = ["uv_build>=0.7.21,<0.8.0"]
-build-backend = "uv_build"
-
-[dependency-groups]
-dev = []
