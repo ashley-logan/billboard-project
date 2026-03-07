@@ -5,8 +5,8 @@ from typing import Iterator, Optional
 import time
 import random
 from aiohttp import ClientSession, TCPConnector
-from app.database import Charts, Entries, async_writer
-from app.utils import (
+from billboard_fetch.database import Charts, Entries, async_writer
+from billboard_fetch.utils import (
     AsyncCounter,
     retry_middleware,
 )

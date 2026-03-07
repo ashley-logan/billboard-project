@@ -3,7 +3,7 @@ name = "billboard-fetch"
 version = "1.0.0"
 description = "cli tool to fetch billboard charts and write to a database"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14.3"
 dependencies = [
     "aiohttp[speedups]>=3.13.3",
     "asyncio>=3.4.3",
@@ -15,3 +15,8 @@ dependencies = [
     "typing>=3.10.0.0",
 ]
 
+[project.scripts]
+fetch = "billboard_fetch:run"
+
+[tool.uv]
+package = true

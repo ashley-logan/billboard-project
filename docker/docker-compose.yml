@@ -3,7 +3,7 @@ services:
   db:
     image: postgres:18-trixie
     container_name: postgres
-    restart: always
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql
     environment:
@@ -19,8 +19,7 @@ services:
     container_name: billboard-fetcher
     depends_on:
       - db
-    entrypoint: ["bash", "-c"]
-    command: "echo dev mode"
+    command: "--help"
     
 
 volumes:

@@ -1,6 +1,6 @@
-from app.utils import date_generator
-from app.configs import OLDEST_CHART_DATE, DB_URI
-from app.database import Charts
+from billboard_fetch.utils import date_generator
+from billboard_fetch.configs import OLDEST_CHART_DATE, DB_URI
+from billboard_fetch.database import Charts
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from datetime import date, datetime, timedelta

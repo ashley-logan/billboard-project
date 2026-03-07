@@ -1,18 +1,14 @@
-FROM python:3.14-slim-trixie
+FROM astral/uv:python3.14-trixie-slim
 
 WORKDIR /billboard_fetch
 
 RUN pip install uv
 
-RUN uv venv /billboard_fetch/.venv
-
-ENV PATH="/billboard_fetch/.venv/bin:$PATH"
-
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync
+RUN uv pip install --system --no-cache
 
-COPY . .
+COPY billboard/ /billboard_fetch/
 
 ENTRYPOINT [ "python", "./billboard/run.py" ]
 

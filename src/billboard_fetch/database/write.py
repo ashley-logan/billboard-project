@@ -1,5 +1,5 @@
 from .models import Charts, Base
-from app.configs import DB_URI
+from billboard_fetch.configs import DB_URI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 import asyncio
 

@@ -1,5 +1,5 @@
 from selectolax.parser import HTMLParser
-from app.database import Entries
+from billboard_fetch.database import Entries
 import re
 
 
