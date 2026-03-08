@@ -8,17 +8,18 @@ class Base(AsyncAttrs, DeclarativeBase):
     pass
 
 
-class Charts(Base):
+class Chart(Base):
     __tablename__ = "charts"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    chart_name: Mapped[str] = mapped_column(nullable=False, unique=False)
     title: Mapped[str] = mapped_column(nullable=False, unique=False)
     date: Mapped[datetime.date] = mapped_column(nullable=False, unique=True)
 
-    entries: Mapped["Entries"] = relationship(back_populates="charts")
+    entries: Mapped["Entry"] = relationship(back_populates="charts")
 
 
-class Entries(Base):
+class Entry(Base):
     __tablename__ = "entries"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -27,4 +28,4 @@ class Entries(Base):
     song_title: Mapped[str] = mapped_column(nullable=False, unique=False)
     artist: Mapped[str] = mapped_column(nullable=False, unique=False)
 
-    charts: Mapped["Charts"] = relationship(back_populates="entries")
+    charts: Mapped["Chart"] = relationship(uselist=True, back_populates="entries")

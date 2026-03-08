@@ -1,5 +1,5 @@
 from selectolax.parser import HTMLParser
-from billboard_fetch.database import Entries
+from billboard_fetch.database import Entry
 import re
 
 
@@ -24,9 +24,9 @@ def get_selectors(num: int) -> tuple[str, str, str]:
     )
 
 
-def parse_html(html_body: str) -> list[Entries]:
+def parse_html(html_body: str) -> list[Entry]:
     tree: HTMLParser = HTMLParser(html_body)
-    entries: list[Entries] = []
+    entries: list[Entry] = []
     chart_num: int = 1
     while True:
         position_tag, title_tag, artist_tag = [
@@ -36,12 +36,12 @@ def parse_html(html_body: str) -> list[Entries]:
             attrs = {
                 "position": int(position_tag.text(strip=True)),
                 "artist": re.sub(r"(?<! )[aA]nd", " And", artist_tag.text(strip=True)),
-                "title": title_tag.text(strip=True)
+                "song_title": title_tag.text(strip=True)
                 .replace("RE-\nENTRY", "")
                 .replace("NEW", ""),
             }
 
-            entries.append(Entries(**attrs))
+            entries.append(Entry(**attrs))
 
             if attrs["position"] == 100 or len(entries) == 100:
                 break

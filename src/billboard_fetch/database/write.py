@@ -1,4 +1,4 @@
-from .models import Charts
+from .models import Chart
 from billboard_fetch.configs import DB_URI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 import asyncio
@@ -9,7 +9,7 @@ engine = create_async_engine(DB_URI)
 async_session: async_sessionmaker[AsyncSession] = async_sessionmaker(engine)
 
 
-async def async_add_batch(batch: list[Charts]):
+async def async_add_batch(batch: list[Chart]):
     batch.sort(key=lambda x: x.date)  # sort charts by date ascending
     async with async_session() as session:
         async with session.begin():
@@ -18,7 +18,7 @@ async def async_add_batch(batch: list[Charts]):
 
 
 async def async_writer(queue2: asyncio.Queue, num_producers: int):
-    batch: list[Charts] = []  # buffer
+    batch: list[Chart] = []  # buffer
 
     async def async_stream():
         # defines streaming behavior from the captured queue

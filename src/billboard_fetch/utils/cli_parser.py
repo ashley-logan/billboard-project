@@ -1,6 +1,6 @@
 from billboard_fetch.utils import date_generator
 from billboard_fetch.configs import OLDEST_CHART_DATE, DB_URI
-from billboard_fetch.database import Charts, Base
+from billboard_fetch.database import Chart, Base
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from datetime import date, datetime, timedelta
@@ -69,7 +69,7 @@ def create_parser() -> argparse.ArgumentParser:
     fetch_command.add_argument(
         "--all",
         action="store_true",
-        help="Fetches all charts and automatically overwrites and existing database entries",
+        help="Fetches all Chart and automatically overwrites and existing database entries",
     )
 
     fetch_command.add_argument(
@@ -113,31 +113,31 @@ def handle_args(args: argparse.Namespace) -> Iterator[date]:
         dates = date_generator(OLDEST_CHART_DATE, date.today())
     elif args.missing:
         with Session() as s:
-            existing = s.scalars(select(Charts.date)).all()
+            existing = s.scalars(select(Chart.date)).all()
         dates = date_generator(
             OLDEST_CHART_DATE, date.today(), lambda x: x not in existing
         )
     elif args.new:
         with Session() as s:
             newest: Optional[date] = s.scalars(
-                select(func.max(Charts.date))
+                select(func.max(Chart.date))
             ).one_or_none()
         if newest is None:
             raise argparse.ArgumentError(
                 argument=None,
-                message="Cannot pass --new when no charts currently exist in the database.",
+                message="Cannot pass --new when no Chart currently exist in the database.",
             )
         start: date = newest + timedelta(days=7)
         dates = date_generator(start, date.today())
     elif args.older:
         with Session() as s:
             oldest: Optional[date] = s.scalars(
-                select(func.min(Charts.date))
+                select(func.min(Chart.date))
             ).one_or_none()
         if oldest is None:
             raise argparse.ArgumentError(
                 argument=None,
-                message="Cannot pass --older when no charts currently exist in the database.",
+                message="Cannot pass --older when no Chart currently exist in the database.",
             )
         end: date = oldest - timedelta(days=7)
         dates = date_generator(OLDEST_CHART_DATE, end)

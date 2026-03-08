@@ -9,4 +9,3 @@ def run():
     charts_to_fetch = handle_args(args)
 
     asyncio.run(extract("hot-100", charts_to_fetch))
-

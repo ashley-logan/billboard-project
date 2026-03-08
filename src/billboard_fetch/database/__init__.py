@@ -1,2 +1,2 @@
-from .models import Base, Charts, Entries
+from .models import Base, Chart, Entry
 from .write import async_writer

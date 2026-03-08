@@ -5,7 +5,7 @@ from typing import Iterator, Optional
 import time
 import random
 from aiohttp import ClientSession, TCPConnector
-from billboard_fetch.database import Charts, Entries, async_writer
+from billboard_fetch.database import Chart, Entry, async_writer
 from billboard_fetch.utils import (
     AsyncCounter,
     retry_middleware,
@@ -27,7 +27,7 @@ async def url_producer(
 
 async def scrape_worker(
     num: int,
-    name: str,
+    chart_name: str,
     counter: Optional[AsyncCounter],
     queue1: asyncio.Queue,
     queue2: asyncio.Queue,
@@ -50,9 +50,9 @@ async def scrape_worker(
             r_body: str = await r.text(encoding="utf-8")
         loop = asyncio.get_running_loop()
         # offloads the parsing of html into a list of entries objects into a process pool since parsing is cpu-bounded
-        entries: list[Entries] = await loop.run_in_executor(pool, parse_html, r_body)
+        entries: list[Entry] = await loop.run_in_executor(pool, parse_html, r_body)
         # create a charts object from the chart date and entries list
-        chart: Charts = Charts(date=date_, name=name, entries=entries)
+        chart: Chart = Chart(date=date_, chart_name=chart_name, entries=entries)
         # mark the current url response as parsed/done
         queue1.task_done()
         # increment the parsed charts counter
