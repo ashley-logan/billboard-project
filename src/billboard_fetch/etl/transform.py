@@ -147,6 +147,6 @@
 
 
 # # if __name__ == "__main__":
-# #     ROOT_DIR: Path = Path(__file__).parent.parent
+# #     _DIR: Path = Path(__file__).parent.parent
 # #     path = ROOT_DIR / "data" / "raw_data" / "raw-data_06-22.parquet"
 # #     tbls_dict = transform(load_path=path)

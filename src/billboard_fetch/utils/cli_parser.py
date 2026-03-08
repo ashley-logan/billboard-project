@@ -1,6 +1,6 @@
 from billboard_fetch.utils import date_generator
 from billboard_fetch.configs import OLDEST_CHART_DATE, DB_URI
-from billboard_fetch.database import Charts
+from billboard_fetch.database import Charts, Base
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from datetime import date, datetime, timedelta
@@ -9,6 +9,8 @@ from typing import Iterator, Optional
 
 
 engine = create_engine(DB_URI)
+
+Base.metadata.create_all(engine)  # create all tables defined in models.py
 
 Session = sessionmaker(engine)
 
@@ -142,4 +144,5 @@ def handle_args(args: argparse.Namespace) -> Iterator[date]:
     elif single_date := args.single:
         dates = date_generator(single_date, single_date)
 
+    engine.dispose()
     return dates

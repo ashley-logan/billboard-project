@@ -1,16 +1,18 @@
 FROM astral/uv:python3.14-trixie-slim
 
-WORKDIR /billboard_fetch
-
-RUN pip install uv
+WORKDIR /billboard-fetch
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv pip install --system --no-cache
+RUN uv sync --locked --no-install-project
 
-COPY billboard/ /billboard_fetch/
+COPY . .
 
-ENTRYPOINT [ "python", "./billboard/run.py" ]
+RUN uv sync --locked
+
+ENV PATH=".venv/bin:$PATH"
+
+ENTRYPOINT [ "uv", "run", "fetch" ]
 
 CMD [ "fetch-range", "--start=2022-08-24", "--end=2023-08-24" ]
 

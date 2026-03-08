@@ -38,7 +38,9 @@ async def scrape_worker(
     while True:
         item: tuple[int, date, str] | None = await queue1.get()
         if item is None:
-            # if sentinel value is received, end worker
+            # if sentinel value is received, pass through to queue2 and end worker
+            await queue2.put(None)
+            queue1.task_done()
             break
         # unstructure tuple into date and url
         chart_num, date_, tail_url = item
@@ -75,7 +77,7 @@ async def extract(chart_name: str, dates: Iterator[date]):
     async with asyncio.TaskGroup() as tg:
         # tg.create_task(progress_report(total_charts, counter))
         tg.create_task(url_producer(dates, queue1, chart_name, 5))
-        tg.create_task(async_writer(queue2))
+        tg.create_task(async_writer(queue2, 5))
         for i in range(5):
             tg.create_task(
                 scrape_worker(i + 1, chart_name, None, queue1, queue2, client, pool)
