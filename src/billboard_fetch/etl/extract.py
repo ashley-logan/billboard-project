@@ -74,19 +74,22 @@ async def extract(chart_name: str, dates: Iterator[date]):
         connector=TCPConnector(limit=30),
     )
     pool: ProcessPoolExecutor = ProcessPoolExecutor()
-    async with asyncio.TaskGroup() as tg:
-        # tg.create_task(progress_report(total_charts, counter))
-        tg.create_task(url_producer(dates, queue1, chart_name, 5))
-        tg.create_task(async_writer(queue2, 5))
-        for i in range(5):
-            tg.create_task(
-                scrape_worker(i + 1, chart_name, None, queue1, queue2, client, pool)
-            )
 
-    await client.close()
-    pool.shutdown(wait=True)
-    await queue2.join()
+    try:
+        async with asyncio.TaskGroup() as tg:
+            # tg.create_task(progress_report(total_charts, counter))
+            tg.create_task(url_producer(dates, queue1, chart_name, 5))
+            tg.create_task(async_writer(queue2, 5))
+            for i in range(5):
+                tg.create_task(
+                    scrape_worker(i + 1, chart_name, None, queue1, queue2, client, pool)
+                )
+            await queue1.join()  # ensure all producer inputs were processed
+            await queue2.join()  # ensure all worker outputs were processed
+    finally:
+        pool.terminate_workers()
+        await client.close()
+
     # num_charts: int = await counter.get()
     print(f"fetching completed in {time.time() - start_time} seconds")
     # print(f"{num_charts} extracted in {time.time() - start_time} seconds")
-    return
