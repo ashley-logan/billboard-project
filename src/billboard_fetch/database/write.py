@@ -45,4 +45,4 @@ async def async_writer(queue2: asyncio.Queue, num_producers: int):
     if batch:
         await async_add_batch(batch)
 
-    engine.dispose()  # dispose db connection
+    await engine.dispose()  # dispose db connection
